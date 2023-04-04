@@ -7,11 +7,7 @@ use bendy::{
     encoding::AsString,
 };
 
-
-
 use sha1::{Digest, Sha1};
-
-
 
 #[derive(Debug)]
 pub struct MetaInfo {
