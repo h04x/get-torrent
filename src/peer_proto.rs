@@ -3,6 +3,8 @@ use data_encoding::HEXLOWER;
 use std::io::{Read, Write};
 use thiserror::Error;
 
+use crate::message::{self, Bitfield, Cancel, Have, Piece, Port, Request};
+
 #[derive(Clone)]
 pub struct Handshake {
     pub extensinons: [u8; 8],
@@ -165,8 +167,6 @@ pub enum MessageError {
 
 pub struct PeerProto<S: Read + Write> {
     stream: S,
-    tmp_buf: [u8; 1024],
-    //pub msg_buf: Vec<u8>
 }
 
 #[derive(Error, Debug)]
@@ -178,28 +178,76 @@ pub enum Error {
     #[error("Our and peer info_hash not equal")]
     PeerInfoHashNotEq,
     #[error("Remote peer closed connection")]
-    ConnectionClosed
+    ConnectionClosed,
 }
 
 #[derive(Error, Debug)]
-pub enum ReadMsgError {
+pub enum RecvMsgError {
     #[error("Error while io")]
     Io(#[from] std::io::Error),
     #[error("Packet len less than 4 bytes")]
     PktLenLessThanFourBytes,
     #[error("Message len less than 1 bytes")]
     MsgLenLessThanOneBytes,
-    #[error("Message buffer overflow")]
-    MsgBufOverflow,
-    #[error("Infinite read loop")]
-    InfiniteReadLoop,
+    #[error("Message error")]
+    Msg(#[from] MessageError),
 }
 
-
+#[derive(Error, Debug)]
+pub enum MessageError {
+    #[error("Message error")]
+    MsgError(#[from] message::Error),
+}
 
 #[derive(Debug)]
 pub enum Message {
-    BitBlt(())
+    Choke,
+    Unchoke,
+    Interested,
+    NotInterested,
+    Have(Have),
+    Bitfield(Bitfield),
+    Request(Request),
+    Piece(Piece),
+    Cancel(Cancel),
+    Port(Port),
+    Unknown(Vec<u8>),
+    KeepAlive,
+}
+
+impl Message {
+    fn try_from_bytes(raw: Vec<u8>) -> Result<Message, MessageError> {
+        return Ok(match raw.get(0) {
+            Some(0) => Self::Choke,
+            Some(1) => Self::Unchoke,
+            Some(2) => Self::Interested,
+            Some(3) => Self::NotInterested,
+            Some(4) => Self::Have(Have::try_from_bytes(raw)?),
+            Some(5) => Self::Bitfield(Bitfield::from_bytes(raw)), //
+            Some(6) => Self::Request(Request::try_from_bytes(raw)?),
+            Some(7) => Self::Piece(Piece::from_bytes(raw)), //
+            Some(8) => Self::Cancel(Cancel::try_from_bytes(raw)?),
+            Some(9) => Self::Port(Port::try_from_bytes(raw)?),
+            Some(_) => Self::Unknown(raw),
+            None => Self::KeepAlive,
+        });
+    }
+    fn bytes(self) -> Vec<u8> {
+        match self {
+            Self::Choke => vec![0],
+            Self::Unchoke => vec![1],
+            Self::Interested => vec![2],
+            Self::NotInterested => vec![3],
+            Self::Have(h) => h.bytes(),
+            Self::Bitfield(b) => b.bytes(),
+            Self::Request(r) => r.bytes(),
+            Self::Piece(p) => p.bytes(),
+            Self::Cancel(c) => c.bytes(),
+            Self::Port(p) => p.bytes(),
+            Self::Unknown(raw) => raw,
+            Self::KeepAlive => vec![]
+        }
+    }
 }
 
 impl<S: Read + Write> PeerProto<S> {
@@ -217,103 +265,36 @@ impl<S: Read + Write> PeerProto<S> {
             return Err(Error::ConnectionClosed);
         }
         let peer_hs = Handshake::from_bytes(&hs_buf)?;
-        //println!("plen {}, buf {:?}", len, &hsbuf);
 
         if hs.info_hash != peer_hs.info_hash {
             return Err(Error::PeerInfoHashNotEq);
         }
-        //let msg_buf = read_exact_msg_len(&mut self.stream, &mut self.tmp_buf).unwrap();
-        //println!("{:?}", msg_buf);
-        Ok(PeerProto {
-            stream: stream,
-            tmp_buf: [0; 1024],
-        })
+        Ok(PeerProto { stream: stream })
     }
 
-    pub fn read_msg(&mut self) -> Result<Message, ReadMsgError> {
+    pub fn recv(&mut self) -> Result<Message, RecvMsgError> {
         let mut head = [0; 4];
         let plen = self.stream.read(&mut head)?;
-        //println!("{:?}", head);
         if plen < 4 {
-            return Err(ReadMsgError::PktLenLessThanFourBytes);
+            return Err(RecvMsgError::PktLenLessThanFourBytes);
         };
         let mlen = u32::from_be_bytes(head[0..4].try_into().unwrap()) as usize;
-        if mlen < 1 {
-            return Err(ReadMsgError::MsgLenLessThanOneBytes);
-        };
         let mut msg_buf = vec![0u8; mlen];
-        //msg_buf[0..5].copy_from_slice(&head);
         let mut pulled_bytes = 0;
         while pulled_bytes < mlen {
             let plen = self.stream.read(&mut msg_buf[pulled_bytes..])?;
             pulled_bytes += plen;
-            //println!("mlen {} plen {} pulled {:?}", mlen, plen, pulled_bytes);
         }
-        //Ok(msg_buf)
-        Ok(Message::BitBlt(()))
+        Ok(Message::try_from_bytes(msg_buf)?)
+    }
+
+    pub fn send(&mut self, msg: Message) -> std::io::Result<usize> {
+        let msg = msg.bytes();
+        let head = (msg.len() as u32).to_be_bytes();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&head);
+        raw.extend_from_slice(&msg);
+        println!("{:?}", raw);
+        self.stream.write(&raw)
     }
 }
-
-/*fn read_exact_msg_len<S: Read>(
-    stream: &mut S,
-    tmpbuf: &mut [u8],
-) -> Result<Vec<u8>, ReadMsgError> {
-    let plen = stream.read(tmpbuf)?;
-    if plen < 5 {
-        return Err(ReadMsgError::MsgLenLessThanOneBytes);
-    }
-    let mlen = u32::from_le_bytes(tmpbuf[0..4].try_into().unwrap()) as usize;
-    let mut buf = Vec::new();
-
-    println!(
-        "mlen {}, plen {}, packet {:?}",
-        mlen,
-        plen,
-        &tmpbuf[0..plen]
-    );
-
-    buf.extend_from_slice(&tmpbuf[0..plen]);
-
-    let mut limit = 0;
-    while buf.len() != mlen {
-        let plen = stream.read(tmpbuf)?;
-        // prevent buf blobing
-        if buf.len() > tmpbuf.len() * 10 {
-            return Err(ReadMsgError::MsgBufOverflow);
-        }
-        // prevent infinite read
-        if limit > 20 {
-            return Err(ReadMsgError::InfiniteReadLoop);
-        }
-        buf.extend_from_slice(&tmpbuf[0..plen]);
-        println!(
-            "mlen {}, plen, {}, buf.len {}, packet {:?}",
-            mlen,
-            plen,
-            buf.len(),
-            &tmpbuf[0..plen]
-        );
-        limit += 1;
-    }
-    Ok(buf)
-}
-
-pub trait Test {
-
-}
-#[derive(Debug)]
-struct One {
-
-}
-
-impl Test for One {
-
-}
-#[derive(Debug)]
-struct Two {
-
-}
-
-impl Test for Two {
-
-}*/

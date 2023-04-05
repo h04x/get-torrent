@@ -1,10 +1,8 @@
-mod peer_proto;
 mod message;
+mod peer_proto;
 
 use peer_proto::PeerProto;
 use rand::distributions::{Alphanumeric, DistString};
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 use std::{fs, thread};
 
 use std::fs::File;
@@ -14,7 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::TrackerResponse;
 
-use crate::peer_proto::{Handshake, Message, MessageType};
+use crate::peer_proto::Message;
 
 fn main() {
     let torrent2 = Torrent::read_from_file("C:/Users/h04x/Downloads/koh2.torrent").unwrap();
@@ -82,8 +80,12 @@ fn main() {
                             .unwrap();
 
                             while true {
-                                let m = pp.read_msg().unwrap();
-                                println!("msg: {:?}", m);
+                                let msg = pp.recv().unwrap();
+                                println!("msg: {:?}", msg);
+                                match msg {
+                                    Message::Bitfield(_) => {pp.send(Message::Interested).unwrap();},
+                                    _ => (),
+                                }
                                 //let bitf = Message::new(MessageType::MsgBitfield, &[]);
                             }
 
