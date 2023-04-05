@@ -225,7 +225,7 @@ impl Message {
             Some(4) => Self::Have(Have::try_from_bytes(raw)?),
             Some(5) => Self::Bitfield(Bitfield::from_bytes(raw)), //
             Some(6) => Self::Request(Request::try_from_bytes(raw)?),
-            Some(7) => Self::Piece(Piece::from_bytes(raw)), //
+            Some(7) => Self::Piece(Piece::try_from_bytes(raw)?),
             Some(8) => Self::Cancel(Cancel::try_from_bytes(raw)?),
             Some(9) => Self::Port(Port::try_from_bytes(raw)?),
             Some(_) => Self::Unknown(raw),
@@ -245,7 +245,7 @@ impl Message {
             Self::Cancel(c) => c.bytes(),
             Self::Port(p) => p.bytes(),
             Self::Unknown(raw) => raw,
-            Self::KeepAlive => vec![]
+            Self::KeepAlive => vec![],
         }
     }
 }

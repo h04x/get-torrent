@@ -12,6 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::TrackerResponse;
 
+use crate::message::Request;
 use crate::peer_proto::Message;
 
 fn main() {
@@ -69,7 +70,8 @@ fn main() {
             threads.push(thread::spawn(move || {
                 match TcpStream::connect(peer.addr) {
                     Ok(mut s) => {
-                        if s.peer_addr().unwrap().ip() == IpAddr::V4(Ipv4Addr::new(37, 23, 162, 7))
+                        if s.peer_addr().unwrap().ip()
+                            == IpAddr::V4(Ipv4Addr::new(212, 107, 237, 24))
                         {
                             println!("connected {:?}, read timeout {:?}", s, s.read_timeout());
                             let mut pp = PeerProto::handshake(
@@ -83,38 +85,22 @@ fn main() {
                                 let msg = pp.recv().unwrap();
                                 println!("msg: {:?}", msg);
                                 match msg {
-                                    Message::Bitfield(_) => {pp.send(Message::Interested).unwrap();},
+                                    Message::Bitfield(_) => {
+                                        pp.send(Message::Interested).unwrap();
+                                        //pp.send(Message::Request(Request::new(616,1,2_u32.pow(14)))).unwrap();
+                                    }
+                                    Message::Unchoke => {
+                                        pp.send(Message::Request(Request::new(
+                                            616,
+                                            1,
+                                            2_u32.pow(14),
+                                        )))
+                                        .unwrap();
+                                    }
                                     _ => (),
                                 }
                                 //let bitf = Message::new(MessageType::MsgBitfield, &[]);
                             }
-
-                            /*let mut buf = [0; 68];
-                            s.write(&hs).unwrap();
-                            let len = s.read(&mut buf).unwrap();
-                            if let Ok(ret) = Handshake::from_bytes(&buf[0..len]) {
-                                println!("{:?}, {:?}", s.peer_addr(), ret);
-                                //s.write(b"\x00\x00\x00\x01\x05").unwrap();
-                                //let bitf = Message::new(MessageType::MsgBitfield, &[]);
-                                //println!("{:?}", bitf.bytes());
-                                //s.write(&bitf.bytes()).unwrap();
-                                let mut buf = [0; 256];
-
-                                let len = s.read(&mut buf).unwrap();
-                                let msg = Message::from_bytes(&buf);
-                                println!("len: {}, {:?}", len, msg);
-                                let int = Message::new(MessageType::MsgInterested, &[]);
-                                //s.write(&int.bytes()).unwrap();
-                                let mut buf = [0; 256];
-                                let len = s.read(&mut buf).unwrap();
-                                //let msg = Message::from_bytes(&buf);
-                                println!("len: {}, {:?}", len, buf);
-                                let len = s.read(&mut buf).unwrap();
-                                //let msg = Message::from_bytes(&buf);
-                                println!("len: {}, {:?}", len, buf);
-                                let len = s.read(&mut buf).unwrap();
-                                //let msg = Message::from_bytes(&buf);
-                                println!("len: {}, {:?}", len, buf);*/
                         }
                     }
                     Err(_) => (),

@@ -8,7 +8,7 @@ impl Bitfield {
         Bitfield {}
     }
     pub fn bytes(&self) -> Vec<u8> {
-        vec![]
+        unimplemented!()
     }
 }
 
@@ -47,6 +47,9 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn new(index: u32, begin: u32, len: u32) -> Request {
+        Request { index, begin, len }
+    }
     pub fn try_from_bytes(raw: Vec<u8>) -> Result<Request, Error> {
         if raw.len() != 13 {
             return Err(Error::InvalidMsgLen);
@@ -67,14 +70,25 @@ impl Request {
 }
 
 #[derive(Debug)]
-pub struct Piece {}
+pub struct Piece {
+    index: u32,
+    begin: u32,
+    block: Vec<u8>,
+}
 
 impl Piece {
-    pub fn from_bytes(raw: Vec<u8>) -> Piece {
-        Piece {}
+    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Piece, Error> {
+        if raw.len() < 9 {
+            return Err(Error::InvalidMsgLen);
+        }
+        Ok(Piece {
+            index: u32::from_be_bytes(raw[1..5].try_into().unwrap()),
+            begin: u32::from_be_bytes(raw[5..9].try_into().unwrap()),
+            block: raw[9..].to_vec(),
+        })
     }
     pub fn bytes(&self) -> Vec<u8> {
-        vec![]
+        unimplemented!()
     }
 }
 
