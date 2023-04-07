@@ -1,14 +1,35 @@
+use core::fmt;
+
 use thiserror::Error;
 
-#[derive(Debug)]
-pub struct Bitfield {}
+pub struct Bitfield {
+    bitfield: Vec<u8>,
+}
+
+impl fmt::Debug for Bitfield {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Bitfield")
+            .field("bitfield(bits)", &(self.bitfield.len() * 8))
+            .finish()
+    }
+}
 
 impl Bitfield {
-    pub fn from_bytes(raw: Vec<u8>) -> Bitfield {
-        Bitfield {}
+    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Bitfield, Error> {
+        if raw.len() < 1 {
+            return Err(Error::InvalidMsgLen);
+        }
+        Ok(Bitfield {
+            bitfield: raw[1..].to_vec(),
+        })
     }
     pub fn bytes(&self) -> Vec<u8> {
         unimplemented!()
+    }
+    pub fn bit(&self, n: usize) -> Option<bool> {
+        let byte = n / 8;
+        let bit = n % 8;
+        Some((self.bitfield.get(byte)? >> (7 - bit)) & 1 == 1)
     }
 }
 
@@ -69,11 +90,20 @@ impl Request {
     }
 }
 
-#[derive(Debug)]
 pub struct Piece {
     index: u32,
     begin: u32,
     block: Vec<u8>,
+}
+
+impl fmt::Debug for Piece {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Piece")
+            .field("index", &self.index)
+            .field("begin", &self.begin)
+            .field("block(bytes)", &self.block.len())
+            .finish()
+    }
 }
 
 impl Piece {

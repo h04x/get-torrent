@@ -82,93 +82,6 @@ impl Handshake {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum MessageType {
-    MsgChoke,
-    MsgUnchoke,
-    MsgInterested,
-    MsgNotInterested,
-    MsgHave,
-    MsgBitfield,
-    MsgRequest,
-    MsgPiece,
-    MsgCancel,
-}
-
-impl TryFrom<u8> for MessageType {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(MessageType::MsgChoke),
-            1 => Ok(MessageType::MsgUnchoke),
-            2 => Ok(MessageType::MsgInterested),
-            3 => Ok(MessageType::MsgNotInterested),
-            4 => Ok(MessageType::MsgHave),
-            5 => Ok(MessageType::MsgBitfield),
-            6 => Ok(MessageType::MsgRequest),
-            7 => Ok(MessageType::MsgPiece),
-            8 => Ok(MessageType::MsgCancel),
-            _ => Err(()),
-        }
-    }
-}
-
-/*impl From<MessageType> for u8 {
-    fn from(value: MessageType) -> Self {
-        value as u8
-    }
-}*/
-
-/*#[derive(Debug)]
-pub struct Message {
-    pub id: MessageType,
-    pub payload: Vec<u8>,
-}*/
-
-/*#[derive(Debug)]
-pub enum MessageError {
-    PacketLenLessThanFiveBytes,
-    PacketLenLessThanDeclared,
-    UnknownMessageType,
-}*/
-
-/*impl Message {
-    pub fn new(msg_id: MessageType, payload: &[u8]) -> Message {
-        Message {
-            id: msg_id,
-            payload: payload.to_vec(),
-        }
-    }
-    pub fn bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        let len = self.payload.len() as u32 + 1;
-        bytes.extend_from_slice(&len.to_be_bytes());
-        bytes.push(self.id as u8);
-        bytes.extend_from_slice(&self.payload);
-        bytes
-    }
-    pub fn from_bytes(bytes: &[u8]) -> Result<Message, MessageError> {
-        if bytes.len() < 5 {
-            return Err(MessageError::PacketLenLessThanFiveBytes);
-        }
-        let len = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
-        if len > bytes.len() as u32 {
-            return Err(MessageError::PacketLenLessThanDeclared);
-        }
-        Ok(Message {
-            id: bytes[4]
-                .try_into()
-                .map_err(|_| MessageError::UnknownMessageType)?,
-            payload: bytes[0..len as usize].to_vec(),
-        })
-    }
-}*/
-
-pub struct PeerProto<S: Read + Write> {
-    stream: S,
-}
-
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Error while handshake")]
@@ -187,8 +100,6 @@ pub enum RecvMsgError {
     Io(#[from] std::io::Error),
     #[error("Packet len less than 4 bytes")]
     PktLenLessThanFourBytes,
-    #[error("Message len less than 1 bytes")]
-    MsgLenLessThanOneBytes,
     #[error("Message error")]
     Msg(#[from] MessageError),
 }
@@ -223,7 +134,7 @@ impl Message {
             Some(2) => Self::Interested,
             Some(3) => Self::NotInterested,
             Some(4) => Self::Have(Have::try_from_bytes(raw)?),
-            Some(5) => Self::Bitfield(Bitfield::from_bytes(raw)), //
+            Some(5) => Self::Bitfield(Bitfield::try_from_bytes(raw)?),
             Some(6) => Self::Request(Request::try_from_bytes(raw)?),
             Some(7) => Self::Piece(Piece::try_from_bytes(raw)?),
             Some(8) => Self::Cancel(Cancel::try_from_bytes(raw)?),
@@ -248,6 +159,10 @@ impl Message {
             Self::KeepAlive => vec![],
         }
     }
+}
+
+pub struct PeerProto<S: Read + Write> {
+    pub stream: S,
 }
 
 impl<S: Read + Write> PeerProto<S> {
@@ -294,7 +209,6 @@ impl<S: Read + Write> PeerProto<S> {
         let mut raw = Vec::new();
         raw.extend_from_slice(&head);
         raw.extend_from_slice(&msg);
-        println!("{:?}", raw);
         self.stream.write(&raw)
     }
 }
