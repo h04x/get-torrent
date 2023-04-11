@@ -1,6 +1,6 @@
 use core::fmt;
 use data_encoding::HEXLOWER;
-use std::io::{Read, Write};
+use std::{io::{Read, Write}, ops::Deref, sync::Arc, net::TcpStream};
 use thiserror::Error;
 
 use crate::message::{self, Bitfield, Cancel, Have, Piece, Port, Request};
@@ -161,16 +161,16 @@ impl Message {
     }
 }
 
-pub struct PeerProto<S: Read + Write> {
-    pub stream: S,
+pub struct PeerProto {
+    pub stream: TcpStream,
 }
 
-impl<S: Read + Write> PeerProto<S> {
+impl PeerProto {
     pub fn handshake<'a, 'b>(
-        mut stream: S,
+        mut stream: TcpStream,
         info_hash: &'a [u8],
         peer_id: &'b [u8],
-    ) -> Result<PeerProto<S>, Error> {
+    ) -> Result<PeerProto, Error> {
         let hs = Handshake::build(info_hash, peer_id)?;
         stream.write(&hs.bytes())?;
 
@@ -187,9 +187,9 @@ impl<S: Read + Write> PeerProto<S> {
         Ok(PeerProto { stream: stream })
     }
 
-    pub fn recv(&mut self) -> Result<Message, RecvMsgError> {
+    pub fn recv(&self) -> Result<Message, RecvMsgError> {
         let mut head = [0; 4];
-        let plen = self.stream.read(&mut head)?;
+        let plen = (&self.stream).read(&mut head)?;
         if plen < 4 {
             return Err(RecvMsgError::PktLenLessThanFourBytes);
         };
@@ -197,18 +197,18 @@ impl<S: Read + Write> PeerProto<S> {
         let mut msg_buf = vec![0u8; mlen];
         let mut pulled_bytes = 0;
         while pulled_bytes < mlen {
-            let plen = self.stream.read(&mut msg_buf[pulled_bytes..])?;
+            let plen = (&self.stream).read(&mut msg_buf[pulled_bytes..])?;
             pulled_bytes += plen;
         }
         Ok(Message::try_from_bytes(msg_buf)?)
     }
 
-    pub fn send(&mut self, msg: Message) -> std::io::Result<usize> {
+    pub fn send(&self, msg: Message) -> std::io::Result<usize> {
         let msg = msg.bytes();
         let head = (msg.len() as u32).to_be_bytes();
         let mut raw = Vec::new();
         raw.extend_from_slice(&head);
         raw.extend_from_slice(&msg);
-        self.stream.write(&raw)
+        (&self.stream).write(&raw)
     }
 }

@@ -15,6 +15,11 @@ impl fmt::Debug for Bitfield {
 }
 
 impl Bitfield {
+    pub fn new(bit_cnt: u32) -> Bitfield {
+        Bitfield {
+            bitfield: vec![0; (bit_cnt as f32 / 8.0).ceil() as usize],
+        }
+    }
     pub fn try_from_bytes(raw: Vec<u8>) -> Result<Bitfield, Error> {
         if raw.len() < 1 {
             return Err(Error::InvalidMsgLen);
@@ -26,7 +31,7 @@ impl Bitfield {
     pub fn bytes(&self) -> Vec<u8> {
         unimplemented!()
     }
-    pub fn bit(&self, n: usize) -> Option<bool> {
+    pub fn get(&self, n: usize) -> Option<bool> {
         let byte = n / 8;
         let bit = n % 8;
         Some((self.bitfield.get(byte)? >> (7 - bit)) & 1 == 1)
