@@ -5,13 +5,14 @@ mod piece;
 
 use peer_proto::PeerProto;
 use rand::distributions::{Alphanumeric, DistString};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fs, thread};
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::net::{IpAddr, Ipv4Addr, TcpStream, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
@@ -93,63 +94,22 @@ fn main() {
         extra_fields,
     } = resp
     {
-
-        //let mut threads = Vec::new();
-        let s = TcpStream::connect("78.61.204.38:16419".parse::<SocketAddr>().unwrap()).unwrap();
-
-        let  pp = Arc::new(PeerProto::handshake(s, &info_hash, &peer_id.as_bytes()).unwrap());
-        let  pp2 = pp.clone();
-        thread::spawn(move ||{
-            dbg!(pp2.recv());
-        });
-        dbg!(pp.recv());
+        let mut peers_data = Arc::new(Mutex::new(HashMap::new()));
         for peer in peers {
-            //let p = peer::Peer::new(peer.addr, info_hash.clone(), peer_id.as_bytes().to_vec());
-
-            //p.connect();
-            //p.send();
-            //let info_hash = info_hash.clone();
-            //let peer_id = peer_id.clone();
-            /*threads.push(thread::spawn(move || {
-                match TcpStream::connect(peer.addr) {
-                    Ok(s) => {
-                        if s.peer_addr().unwrap().ip() == IpAddr::V4(Ipv4Addr::new(78, 61, 204, 38))
-                        {
-                            //s.set_read_timeout(Duration::secs(1)).u;
-                            println!("connected {:?}, read timeout {:?}", s, s.read_timeout());
-                            let mut pp =
-                                PeerProto::handshake(s, &info_hash, &peer_id.as_bytes()).unwrap();
-
-                            loop {
-                                let msg = pp.recv().unwrap();
-                                println!("msg: {:?}", msg);
-                                match msg {
-                                    Message::Bitfield(_) => {
-                                        pp.send(Message::Interested).unwrap();
-
-                                        //pp.send(Message::Request(Request::new(616,1,2_u32.pow(14)))).unwrap();
-                                    }
-                                    Message::Unchoke => {
-                                        pp.send(Message::Request(Request::new(
-                                            8671,
-                                            1,
-                                            2_u32.pow(14),
-                                        )))
-                                        .unwrap();
-                                    }
-                                    _ => (),
-                                }
-                                //let bitf = Message::new(MessageType::MsgBitfield, &[]);
-                            }
-                        }
-                    }
-                    Err(_) => (),
-                };
-            })); */
+            let info_hash = info_hash.clone();
+            peer::Peer::start_receiver(
+                peer.addr,
+                info_hash,
+                peer_id.as_bytes().to_vec(),
+                peers_data.clone(),
+            );
         }
+        thread::sleep(Duration::from_secs(1));
+        peers_data.lock().unwrap().iter().next().unwrap().1.proto.send(Message::Request(message::Request::new(0, 0, 2u32.pow(14))));
 
-        /*for t in threads {
-            t.join().unwrap();
-        }*/
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            println!("peers.len() {:?}", peers_data.lock().unwrap().len());
+        }
     }
 }

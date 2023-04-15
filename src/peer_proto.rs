@@ -1,6 +1,11 @@
 use core::fmt;
 use data_encoding::HEXLOWER;
-use std::{io::{Read, Write}, ops::Deref, sync::Arc, net::TcpStream};
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+    ops::Deref,
+    sync::Arc,
+};
 use thiserror::Error;
 
 use crate::message::{self, Bitfield, Cancel, Have, Piece, Port, Request};
