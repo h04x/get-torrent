@@ -3,8 +3,6 @@ use data_encoding::HEXLOWER;
 use std::{
     io::{Read, Write},
     net::TcpStream,
-    ops::Deref,
-    sync::Arc,
 };
 use thiserror::Error;
 
@@ -103,10 +101,10 @@ pub enum Error {
 pub enum RecvMsgError {
     #[error("Error while io")]
     Io(#[from] std::io::Error),
-    #[error("Packet len less than 4 bytes")]
-    PktLenLessThanFourBytes,
     #[error("Message error")]
     Msg(#[from] MessageError),
+    #[error("Remote peer closed connection")]
+    ConnectionClosed
 }
 
 #[derive(Error, Debug)]
@@ -195,8 +193,11 @@ impl PeerProto {
     pub fn recv(&self) -> Result<Message, RecvMsgError> {
         let mut head = [0; 4];
         let plen = (&self.stream).read(&mut head)?;
+        if plen == 0 {
+            return Err(RecvMsgError::ConnectionClosed);
+        };
         if plen < 4 {
-            return Err(RecvMsgError::PktLenLessThanFourBytes);
+            return Err(RecvMsgError::Msg(MessageError::MsgError(message::Error::InvalidMsgLen)));
         };
         let mlen = u32::from_be_bytes(head[0..4].try_into().unwrap()) as usize;
         let mut msg_buf = vec![0u8; mlen];

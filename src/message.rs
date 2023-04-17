@@ -36,6 +36,17 @@ impl Bitfield {
         let bit = n % 8;
         Some((self.bitfield.get(byte)? >> (7 - bit)) & 1 == 1)
     }
+    pub fn set(&mut self, index: usize, flag: bool) {
+        let byte = index / 8;
+        let bit = index % 8;
+        if let Some(b) = self.bitfield.get_mut(byte) {
+            if flag {
+                *b = *b | 0b10000000u8 >> bit;
+            } else {
+                *b = *b & !(0b10000000u8 >> bit);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -46,7 +57,7 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct Have {
-    piece_index: u32,
+    pub piece_index: u32,
 }
 
 impl Have {

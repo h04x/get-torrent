@@ -1,9 +1,10 @@
+const BLOCK_SIZE: u32 = 2u32.pow(14);
+
 mod message;
 mod peer;
 mod peer_proto;
 mod piece;
 
-use peer_proto::PeerProto;
 use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,13 +13,11 @@ use std::{fs, thread};
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
 
-use crate::message::Request;
-use crate::peer_proto::Message;
+use crate::piece::start_piece_receiver;
 
 trait Test {}
 
@@ -27,6 +26,7 @@ impl Test for Peer {}
 fn main() {
     let torrent2 = Torrent::read_from_file("C:/Users/h04x/Downloads/koh2.torrent").unwrap();
     let peer_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 20);
+    let pieces_cnt = torrent2.pieces.len();
 
     println!(
         "torrent files total len {}",
@@ -38,11 +38,11 @@ fn main() {
             .map(|i| i.length)
             .sum::<i64>()
     );
-    println!("pieces cnt {}", &torrent2.pieces.len());
+    println!("pieces cnt {}", pieces_cnt);
     println!("one piece len {}", &torrent2.piece_length);
     println!(
         "piece len * piece cnt {}",
-        *&torrent2.pieces.len() as i64 * &torrent2.piece_length
+        pieces_cnt as i64 * &torrent2.piece_length
     );
 
     if false {
@@ -84,17 +84,14 @@ fn main() {
     }
 
     if let TrackerResponse::Success {
-        interval,
         peers,
-        warning,
-        min_interval,
-        tracker_id,
-        complete,
-        incomplete,
-        extra_fields,
+        ..
     } = resp
     {
-        let mut peers_data = Arc::new(Mutex::new(HashMap::new()));
+        let peers_data = Arc::new(Mutex::new(HashMap::new()));
+
+        let chan_tx = start_piece_receiver(peers_data.clone());
+
         for peer in peers {
             let info_hash = info_hash.clone();
             peer::Peer::start_receiver(
@@ -102,10 +99,9 @@ fn main() {
                 info_hash,
                 peer_id.as_bytes().to_vec(),
                 peers_data.clone(),
+                chan_tx.clone(),
             );
         }
-        thread::sleep(Duration::from_secs(1));
-        peers_data.lock().unwrap().iter().next().unwrap().1.proto.send(Message::Request(message::Request::new(0, 0, 2u32.pow(14))));
 
         loop {
             thread::sleep(Duration::from_secs(1));

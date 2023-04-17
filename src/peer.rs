@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
-    io::{Read, Write},
-    net::{SocketAddr, TcpStream, ToSocketAddrs},
-    ops::Deref,
-    sync::{Arc, Mutex, MutexGuard},
+    net::{SocketAddr, TcpStream},
+    sync::{
+        mpsc::{SendError, Sender},
+        Arc, Mutex
+    },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use thiserror::Error;
@@ -16,11 +17,11 @@ use crate::{
     peer_proto::{self, Message, PeerProto},
 };
 
-#[derive(Debug)]
+/*#[derive(Debug)]
 pub struct Error {
     addr: std::net::SocketAddr,
     err: Err,
-}
+}*/
 
 #[derive(Error, Debug)]
 pub enum Err {
@@ -34,112 +35,107 @@ pub enum Err {
     LockPeersMutex,
     #[error("Get peer from peers hashmap error")]
     GetPeersHashMap,
+    #[error("Error while piece channel sending")]
+    PieceChannelSend(#[from] SendError<(SocketAddr, message::Piece)>),
+    #[error("Bitfield not received")]
+    BitfieldNotRecv,
 }
 
+pub enum State {
+    Disconnect,
+    Choke,
+    Unchoke,
+}
 pub struct Peer {
     pub proto: Arc<PeerProto>,
-    bitfield: Option<message::Bitfield>,
+    bitfield: message::Bitfield,
+    choke: State,
 }
 
-type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
+pub type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
+
+macro_rules! lock {
+    ( $peers:expr ) => {
+        $peers.lock().map_err(|_| Err::LockPeersMutex)?
+    };
+}
+
+macro_rules! peer_get_mut {
+    ( $peers:expr, $addr:expr ) => {
+        $peers
+            .lock()
+            .map_err(|_| Err::LockPeersMutex)?
+            .get_mut($addr)
+            .ok_or(Err::GetPeersHashMap)?
+    };
+}
 
 impl Peer {
+    pub fn test(
+        peers: Arc<Mutex<HashMap<SocketAddr, Peer>>>,
+        addr: SocketAddr,
+        info_hash: Vec<u8>,
+        peer_id: Vec<u8>,
+        chan_tx: Sender<(SocketAddr, message::Piece)>,
+    ) -> Result<(), Err> {
+        let s = TcpStream::connect(addr)?;
+        let p = Arc::new(PeerProto::handshake(s, &info_hash, &peer_id)?);
+
+        let msg = p.recv()?;
+        let bf = match msg {
+            Message::Bitfield(bf) => bf,
+            _ => return Err(Err::BitfieldNotRecv),
+        };
+
+        let pp = p.clone();
+        {
+            lock!(peers).insert(
+                addr,
+                Peer {
+                    proto: pp,
+                    bitfield: bf,
+                    choke: State::Choke,
+                },
+            );
+        }
+
+        p.send(Message::Interested)?;
+
+        let pp = p.clone();
+        let peers2 = peers.clone();
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(5));
+            if let Ok(lock) = peers2.lock() {
+                if let Some(peer) = lock.get(&addr) {
+                    peer.proto.send(Message::KeepAlive);
+                }
+            }
+        });
+
+        loop {
+            let msg = p.recv()?;
+            println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
+            match msg {
+                Message::Choke => peer_get_mut!(peers, &addr).choke = State::Choke,
+                Message::Unchoke => peer_get_mut!(peers, &addr).choke = State::Unchoke,
+                Message::Have(h) => peer_get_mut!(peers, &addr)
+                    .bitfield
+                    .set(h.piece_index as usize, true),
+                Message::Bitfield(bf) => peer_get_mut!(peers, &addr).bitfield = bf,
+                Message::Piece(p) => chan_tx.send((addr, p))?,
+                _ => (),
+            }
+        }
+    }
+
     pub fn start_receiver(
         addr: SocketAddr,
         info_hash: Vec<u8>,
         peer_id: Vec<u8>,
         peers: Peers,
-    ) -> JoinHandle<Result<(), Error>> {
-        let t = thread::spawn(move || {
-            let s = TcpStream::connect(addr).map_err(|e| Error {
-                addr,
-                err: e.into(),
-            })?;
-            let p = Arc::new(
-                PeerProto::handshake(s, &info_hash, &peer_id).map_err(|e| Error {
-                    addr,
-                    err: e.into(),
-                })?,
-            );
-
-            let pp = p.clone();
-            {
-                let mut lock = peers.lock().map_err(|e| Error {
-                    addr,
-                    err: Err::LockPeersMutex,
-                })?;
-                lock.insert(
-                    addr,
-                    Peer {
-                        proto: pp,
-                        bitfield: None,
-                    },
-                );
-            }
-
-            let ppp = p.clone();
-
-            thread::spawn(move || loop {
-                thread::sleep(Duration::from_secs(5));
-                ppp.send(Message::KeepAlive).unwrap();
-            });
-
-            p.send(Message::Interested).map_err(|e| Error {
-                addr,
-                err: e.into(),
-            })?;
-
-            loop {
-                let msg = p.recv().map_err(|e| Error {
-                    addr,
-                    err: e.into(),
-                })?;
-                println!("[{:?}] {:?}", addr, msg);
-                match msg {
-                    Message::Choke => (),
-                    Message::Unchoke => (),
-                    Message::Have(h) => (),
-                    Message::Bitfield(bf) => {
-                        peers
-                            .lock()
-                            .map_err(|e| Error {
-                                addr,
-                                err: Err::LockPeersMutex,
-                            })?
-                            .get_mut(&addr)
-                            .ok_or(Error {
-                                addr,
-                                err: Err::GetPeersHashMap,
-                            })?
-                            .bitfield = Some(bf);
-                    }
-                    Message::Piece(p) => (),
-                    _ => (),
-                }
-            }
-            //Ok(())
-        });
-        /*let addr = self.addr.clone();
-        let info_hash = self.info_hash.clone();
-        let peer_id = self.peer_id.clone();
-        let mut s = TcpStream::connect_timeout(&addr.to_socket_addrs().unwrap().next().unwrap(), Duration::from_secs(1)).unwrap();
-        println!("read timeout: {:?}", s.read_timeout());
-        let pp = Arc::new(PeerProto::handshake(s, &info_hash, &peer_id).unwrap());
-        let mut ppr = pp.clone();
-        let t = thread::spawn(move || {
-            //ppr.deref().recv();
-
-
-        });
-        t.join();*/
-
-        /*let mut v = Arc::new(s);
-        let mut w = v.clone();
-        thread::spawn(move || {
-            w.deref().write(b"qwe");
-        });
-        let mut buf = [0; 5];
-        v.deref().read(&mut buf);*/
+        chan_tx: Sender<(SocketAddr, message::Piece)>,
+    ) -> JoinHandle<Result<(), Err>> {
+        let t = thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id, chan_tx));
         t
     }
 
