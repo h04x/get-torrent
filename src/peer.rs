@@ -1,12 +1,13 @@
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt::Debug,
     net::{SocketAddr, TcpStream},
     sync::{
         mpsc::{SendError, Sender},
-        Arc, Mutex
+        Arc,
     },
-    thread::{self, JoinHandle},
+    thread::{self},
     time::{Duration, Instant},
 };
 
@@ -31,8 +32,6 @@ pub enum Err {
     PeerProto(#[from] peer_proto::Error),
     #[error("Receive message error")]
     RecvMsg(#[from] peer_proto::RecvMsgError),
-    #[error("Mutex locking error")]
-    LockPeersMutex,
     #[error("Get peer from peers hashmap error")]
     GetPeersHashMap,
     #[error("Error while piece channel sending")]
@@ -42,7 +41,6 @@ pub enum Err {
 }
 
 pub enum State {
-    Disconnect,
     Choke,
     Unchoke,
 }
@@ -54,19 +52,9 @@ pub struct Peer {
 
 pub type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
 
-macro_rules! lock {
-    ( $peers:expr ) => {
-        $peers.lock().map_err(|_| Err::LockPeersMutex)?
-    };
-}
-
 macro_rules! peer_get_mut {
     ( $peers:expr, $addr:expr ) => {
-        $peers
-            .lock()
-            .map_err(|_| Err::LockPeersMutex)?
-            .get_mut($addr)
-            .ok_or(Err::GetPeersHashMap)?
+        $peers.lock().get_mut($addr).ok_or(Err::GetPeersHashMap)?
     };
 }
 
@@ -89,7 +77,7 @@ impl Peer {
 
         let pp = p.clone();
         {
-            lock!(peers).insert(
+            peers.lock().insert(
                 addr,
                 Peer {
                     proto: pp,
@@ -102,18 +90,18 @@ impl Peer {
         p.send(Message::Interested)?;
 
         let pp = p.clone();
-        let peers2 = peers.clone();
-        thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(5));
-            if let Ok(lock) = peers2.lock() {
-                if let Some(peer) = lock.get(&addr) {
-                    peer.proto.send(Message::KeepAlive);
-                }
+        thread::spawn(move || -> Result<(), Err> {
+            loop {
+                thread::sleep(Duration::from_secs(7));
+                pp.send(Message::KeepAlive)?;
             }
         });
 
         loop {
-            let msg = p.recv()?;
+            let msg = p.recv().or_else(|e| {
+                peers.lock().remove(&addr);
+                Err(e)
+            })?;
             println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
             match msg {
                 Message::Choke => peer_get_mut!(peers, &addr).choke = State::Choke,
@@ -134,9 +122,10 @@ impl Peer {
         peer_id: Vec<u8>,
         peers: Peers,
         chan_tx: Sender<(SocketAddr, message::Piece)>,
-    ) -> JoinHandle<Result<(), Err>> {
-        let t = thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id, chan_tx));
-        t
+    ) {
+        if peers.lock().contains_key(&addr) == false {
+            thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id, chan_tx));
+        }
     }
 
     pub fn send(&self) {}

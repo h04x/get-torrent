@@ -104,7 +104,7 @@ pub enum RecvMsgError {
     #[error("Message error")]
     Msg(#[from] MessageError),
     #[error("Remote peer closed connection")]
-    ConnectionClosed
+    ConnectionClosed,
 }
 
 #[derive(Error, Debug)]
@@ -197,7 +197,9 @@ impl PeerProto {
             return Err(RecvMsgError::ConnectionClosed);
         };
         if plen < 4 {
-            return Err(RecvMsgError::Msg(MessageError::MsgError(message::Error::InvalidMsgLen)));
+            return Err(RecvMsgError::Msg(MessageError::MsgError(
+                message::Error::InvalidMsgLen,
+            )));
         };
         let mlen = u32::from_be_bytes(head[0..4].try_into().unwrap()) as usize;
         let mut msg_buf = vec![0u8; mlen];
