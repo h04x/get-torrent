@@ -1,13 +1,19 @@
 use std::{
     collections::BTreeMap,
     net::SocketAddr,
-    sync::mpsc::{channel, Sender},
+    sync::{
+        mpsc::{channel, Sender},
+        Arc,
+    },
     thread,
 };
 
+use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 
 use crate::{message, peer::Peers, BLOCK_SIZE};
+
+pub type Pieces = Arc<Mutex<Vec<Piece>>>;
 
 #[derive(Debug)]
 enum AddError {
@@ -16,6 +22,8 @@ enum AddError {
     BlockOversize,
     BlockOverwrite,
 }
+
+#[derive(Debug)]
 pub struct Piece {
     pub hash: [u8; 20],
     pub len: u32,
@@ -24,9 +32,10 @@ pub struct Piece {
     block_count: u32,
 }
 
+#[derive(Debug)]
 pub struct BlockParam {
-    begin: u32,
-    len: u32
+    pub begin: u32,
+    pub len: u32,
 }
 
 impl Piece {
@@ -36,7 +45,7 @@ impl Piece {
             len,
             complete: false,
             blocks: BTreeMap::new(),
-            block_count: len / BLOCK_SIZE,
+            block_count: (len + BLOCK_SIZE - 1) / BLOCK_SIZE, //divceil
         }
     }
 
@@ -44,16 +53,20 @@ impl Piece {
         let finished_blocks = self.blocks.keys().collect::<Vec<_>>();
         let mut all_blocks = (0..self.block_count).collect::<Vec<_>>();
         all_blocks.retain(|i| finished_blocks.contains(&i) == false);
-        all_blocks.into_iter().map(|begin|{
-            let mut block_size = BLOCK_SIZE;
-            if begin == self.block_count - 1 {
-                block_size = self.len % BLOCK_SIZE;
-            }
-            BlockParam {
-                begin: begin * BLOCK_SIZE,
-                len: block_size
-            }
-        }).collect()
+        all_blocks
+            .into_iter()
+            .map(|begin| {
+                let mut block_size = BLOCK_SIZE;
+                // last block may be shorter than others
+                if (begin * BLOCK_SIZE) + BLOCK_SIZE > self.len {
+                    block_size = self.len - begin * BLOCK_SIZE;
+                }
+                BlockParam {
+                    begin: begin * BLOCK_SIZE,
+                    len: block_size,
+                }
+            })
+            .collect()
     }
 
     fn update_complete(&mut self) {
@@ -98,13 +111,13 @@ impl Piece {
 
 pub fn start_piece_receiver(
     peers: Peers,
-    mut pieces: Vec<Piece>,
+    mut pieces: Pieces,
 ) -> Sender<(SocketAddr, message::Piece)> {
     let (tx, rx) = channel::<(SocketAddr, message::Piece)>();
 
     thread::spawn(move || {
         while let Ok((peer_addr, block)) = rx.recv() {
-            if let Some(piece) = pieces.get_mut(block.index as usize) {
+            if let Some(piece) = pieces.lock().get_mut(block.index as usize) {
                 if let Err(e) = piece.add(block.begin, block.block) {
                     println!("{:?}", e);
                 }
