@@ -1,4 +1,4 @@
-const BLOCK_SIZE: usize = 2usize.pow(14);
+const BLOCK_SIZE: u32 = 2u32.pow(14);
 
 mod message;
 mod peer;
@@ -74,11 +74,11 @@ fn main() {
     let info_hash = torrent_file.info_hash_bytes();
 
     let mut pieces = Vec::new();
-    let mut len = 0;
-    for (idx, hash) in torrent_file.pieces.iter().enumerate() {
-        len = torrent_file.length;
-        if idx == torrent_file.pieces.len() - 1 {
-            len = torrent_file.length % torrent_file.piece_length
+    let mut len = 0u32;
+    for (index, hash) in torrent_file.pieces.iter().enumerate() {
+        len = torrent_file.piece_length as u32;
+        if index == torrent_file.pieces.len() - 1 {
+            len = (torrent_file.length % torrent_file.piece_length) as u32
         }
         pieces.push(piece::Piece::new(
             hash.clone().try_into().expect("piece hash mismatch length"),
