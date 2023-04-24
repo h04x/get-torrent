@@ -5,13 +5,19 @@ use std::{
         mpsc::{channel, Sender},
         Arc,
     },
-    thread, time::Duration,
+    thread,
+    time::Duration,
 };
 
 use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 
-use crate::{message::{self, Request}, peer::Peers, BLOCK_SIZE, peer_proto::{self, Message}};
+use crate::{
+    message::{self, Request},
+    peer::Peers,
+    peer_proto::{self, Message},
+    BLOCK_SIZE,
+};
 
 pub type Pieces = Arc<Mutex<Vec<Piece>>>;
 
@@ -25,6 +31,7 @@ enum AddError {
 
 #[derive(Debug)]
 pub struct Piece {
+    pub index: usize,
     pub hash: [u8; 20],
     pub len: u32,
     pub complete: bool,
@@ -39,8 +46,9 @@ pub struct BlockParam {
 }
 
 impl Piece {
-    pub fn new(hash: [u8; 20], len: u32) -> Piece {
+    pub fn new(index: usize, hash: [u8; 20], len: u32) -> Piece {
         Piece {
+            index,
             hash,
             len,
             complete: false,
@@ -110,15 +118,10 @@ impl Piece {
 }
 
 pub fn start_piece_requester(peers: Peers, pieces: Pieces) {
-    thread::spawn(move || {
-        
-    });
+    thread::spawn(move || {});
 }
 
-pub fn start_piece_receiver(
-    peers: Peers,
-    pieces: Pieces,
-) -> Sender<(SocketAddr, message::Piece)> {
+/*pub fn start_piece_receiver(peers: Peers, pieces: Pieces) -> Sender<(SocketAddr, message::Piece)> {
     let (tx, rx) = channel::<(SocketAddr, message::Piece)>();
 
     thread::spawn(move || {
@@ -129,7 +132,12 @@ pub fn start_piece_receiver(
             {
                 let lock = peers.lock();
                 if lock.len() > 0 {
-                    lock.values().last().unwrap().proto.send(Message::Request(Request::new(0, block.begin, block.len))).unwrap();
+                    lock.values()
+                        .last()
+                        .unwrap()
+                        .proto
+                        .send(Message::Request(Request::new(0, block.begin, block.len)))
+                        .unwrap();
                     break;
                 }
             }
@@ -144,4 +152,4 @@ pub fn start_piece_receiver(
         }
     });
     tx
-}
+}*/

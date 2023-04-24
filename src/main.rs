@@ -4,6 +4,7 @@ mod message;
 mod peer;
 mod peer_proto;
 mod piece;
+mod piece_dispatch;
 #[cfg(test)]
 mod tests;
 
@@ -20,7 +21,7 @@ use std::io::prelude::*;
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
 
-use crate::piece::start_piece_receiver;
+use crate::piece_dispatch::PieceDispatch;
 
 trait Test {}
 
@@ -72,18 +73,7 @@ fn main() {
     let resp = TrackerResponse::from_bytes(s).unwrap();
     let info_hash = torrent.info_hash_bytes();
 
-    let mut pieces = Vec::new();
-    for (index, hash) in torrent.pieces.iter().enumerate() {
-        let mut len = torrent.piece_length as u32;
-        // last piece may be shorter than others
-        if index as i64 * torrent.piece_length + torrent.piece_length > torrent.length {
-            len = (torrent.length % torrent.piece_length) as u32;
-        }
-        pieces.push(piece::Piece::new(
-            hash.clone().try_into().expect("piece hash mismatch length"),
-            len,
-        ));
-    }
+    let piece_dispatch = PieceDispatch::new(&torrent);
 
     if let TrackerResponse::Success {
         interval,
@@ -95,8 +85,8 @@ fn main() {
         println!("interval:{:?}, min_interval {:?}", interval, min_interval);
         let peers_data = Arc::new(Mutex::new(HashMap::new()));
 
-        let pieces = Arc::new(Mutex::new(pieces));
-        let chan_tx = start_piece_receiver(peers_data.clone(), pieces.clone());
+        //let pieces = Arc::new(Mutex::new(pieces));
+        //let chan_tx = start_piece_receiver(peers_data.clone(), pieces.clone());
 
         for peer in peers {
             let info_hash = info_hash.clone();
@@ -105,17 +95,19 @@ fn main() {
                 info_hash,
                 peer_id.as_bytes().to_vec(),
                 peers_data.clone(),
-                chan_tx.clone(),
+                peer, //chan_tx.clone(),
+                piece_dispatch.rx.clone(),
+                piece_dispatch.tx.clone(),
             );
         }
 
         loop {
             thread::sleep(Duration::from_secs(1));
             println!(
-                "active peers: {:?}, complete pieces: {}/{}",
+                "active peers: {:?}, complete pieces: ",
                 peers_data.lock().len(),
-                pieces.lock().iter().filter(|p| p.complete).count(),
-                torrent.pieces.len()
+                //pieces.lock().iter().filter(|p| p.complete).count(),
+                //torrent.pieces.len()
             );
         }
     }
