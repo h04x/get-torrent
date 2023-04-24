@@ -102,7 +102,7 @@ impl Peer {
                 peers.lock().remove(&addr);
                 Err(e)
             })?;
-            println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
+            //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
             match msg {
                 Message::Choke => peer_get_mut!(peers, &addr).choke = State::Choke,
                 Message::Unchoke => peer_get_mut!(peers, &addr).choke = State::Unchoke,
@@ -127,6 +127,4 @@ impl Peer {
             thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id, chan_tx));
         }
     }
-
-    pub fn send(&self) {}
 }

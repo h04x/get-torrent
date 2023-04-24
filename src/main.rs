@@ -70,9 +70,6 @@ fn main() {
 
     let s = fs::read("peers.torrent").unwrap();
     let resp = TrackerResponse::from_bytes(s).unwrap();
-    //let resp = TrackerResponse::from_bytes(resp.bytes().unwrap());
-    //let resp = BencodeElem::from_bytes(resp.bytes().unwrap()).unwrap();
-    //println!("{:#?}", resp);
     let info_hash = torrent.info_hash_bytes();
 
     let mut pieces = Vec::new();

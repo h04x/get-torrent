@@ -5,13 +5,13 @@ use std::{
         mpsc::{channel, Sender},
         Arc,
     },
-    thread,
+    thread, time::Duration,
 };
 
 use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 
-use crate::{message, peer::Peers, BLOCK_SIZE};
+use crate::{message::{self, Request}, peer::Peers, BLOCK_SIZE, peer_proto::{self, Message}};
 
 pub type Pieces = Arc<Mutex<Vec<Piece>>>;
 
@@ -109,13 +109,32 @@ impl Piece {
     }
 }
 
+pub fn start_piece_requester(peers: Peers, pieces: Pieces) {
+    thread::spawn(move || {
+        
+    });
+}
+
 pub fn start_piece_receiver(
     peers: Peers,
-    mut pieces: Pieces,
+    pieces: Pieces,
 ) -> Sender<(SocketAddr, message::Piece)> {
     let (tx, rx) = channel::<(SocketAddr, message::Piece)>();
 
     thread::spawn(move || {
+        let unfinished_blocks = pieces.lock().get(0).unwrap().unfinished_blocks();
+        let block = unfinished_blocks.first().unwrap();
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            {
+                let lock = peers.lock();
+                if lock.len() > 0 {
+                    lock.values().last().unwrap().proto.send(Message::Request(Request::new(0, block.begin, block.len))).unwrap();
+                    break;
+                }
+            }
+        }
+
         while let Ok((peer_addr, block)) = rx.recv() {
             if let Some(piece) = pieces.lock().get_mut(block.index as usize) {
                 if let Err(e) = piece.add(block.begin, block.block) {
