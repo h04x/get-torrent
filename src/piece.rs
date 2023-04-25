@@ -22,7 +22,7 @@ use crate::{
 pub type Pieces = Arc<Mutex<Vec<Piece>>>;
 
 #[derive(Debug)]
-enum AddError {
+pub enum AddError {
     BlockAlignError,
     BeginNotInRage,
     BlockOversize,

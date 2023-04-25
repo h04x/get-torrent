@@ -1,5 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -114,6 +114,7 @@ impl Peer {
 
     fn process(
         peers: Peers,
+        complete_pieces: Arc<Mutex<Vec<Piece>>>,
         addr: SocketAddr,
         info_hash: Vec<u8>,
         my_id: Vec<u8>,
@@ -121,7 +122,7 @@ impl Peer {
         return_piece: Sender<Piece>,
     ) -> Result<(), Err> {
         let s = TcpStream::connect(addr)?;
-        let p = PeerProto::handshake(s, &info_hash, &my_id)?;
+        let p = Arc::new(PeerProto::handshake(s, &info_hash, &my_id)?);
 
         let msg = p.recv()?;
         let mut bitfield = match msg {
@@ -129,45 +130,78 @@ impl Peer {
             _ => return Err(Err::BitfieldNotRecv),
         };
 
-        struct Cfg {
-            choke: State,
-            bitfield: message::Bitfield
-        }
-
-        let cfg = Arc::new(Mutex::new(Cfg{ bitfield, choke: State::Choke }));
-
         peers.lock().insert(addr, Peer {});
 
         p.send(Message::Interested)?;
 
-        while let Ok(piece) = get_piece.recv() {
+        let choke_lock = Arc::new((Mutex::new(State::Choke), Condvar::new()));
 
-        }
-
-        thread::spawn(move || {});
-
-        loop {
-            if cfg.lock().choke == State::Unchoke /*|| wait_unchoke.*/ {
-
+        let (msg_piece_tx, msg_piece_rx) = crossbeam_channel::unbounded();
+        let pp = p.clone();
+        let choke_lock2 = choke_lock.clone();
+        thread::spawn(move || {
+            while let Ok(msg) = pp.recv() {
+                //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
+                match msg {
+                    Message::Choke => *choke_lock2.0.lock() = State::Choke,
+                    Message::Unchoke => {
+                        let &(ref lock, ref cvar) = &*choke_lock2;
+                        let mut choke = lock.lock();
+                        *choke = State::Unchoke;
+                        cvar.notify_one();
+                    }
+                    //Message::Have(h) => cfg.lock().bitfield.set(h.piece_index as usize, true),
+                    //Message::Bitfield(bf) => cfg.lock().bitfield = bf,
+                    Message::Piece(p) => {
+                        if msg_piece_tx.send(p).is_err() {
+                            break;
+                        }
+                    } //chan_tx.send((addr, p))?,
+                    _ => (),
+                }
             }
-
-        }
-
-        loop {
-            let msg = p.recv().or_else(|e| {
+            /*let msg = p.recv().or_else(|e| {
                 peers.lock().remove(&addr);
                 Err(e)
-            })?;
-            println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
-            match msg {
-                Message::Choke => cfg.lock().choke = State::Choke,
-                Message::Unchoke => cfg.lock().choke = State::Unchoke,
-                Message::Have(h) => cfg.lock().bitfield.set(h.piece_index as usize, true),
-                Message::Bitfield(bf) => cfg.lock().bitfield = bf,
-                Message::Piece(p) => (), //chan_tx.send((addr, p))?,
-                _ => (),
+            })?;*/
+        });
+
+        // waiting while choked
+        let &(ref lock, ref cvar) = &*choke_lock;
+        let mut choke = lock.lock();
+        if *choke == State::Choke {
+            cvar.wait(&mut choke);
+        }
+
+        /*while let Ok(msg_piece) = msg_piece_rx.recv() {
+
+        }*/
+
+        while let Ok(mut piece) = get_piece.recv() {
+            if bitfield.get(piece.index) != Some(true) {
+                return_piece.send(piece);
+                continue;
+            }
+            for u in piece.unfinished_blocks() {
+                p.send(Message::Request(message::Request::new(
+                    piece.index as u32,
+                    u.begin,
+                    u.len,
+                )));
+                match msg_piece_rx.recv() {
+                    Ok(msg_piece) => {
+                        piece.add(msg_piece.begin, msg_piece.block);
+                    }
+                    Err(_) => break,
+                }
+            }
+            if piece.complete {
+                complete_pieces.lock().push(piece);
+            } else {
+                return_piece.send(piece);
             }
         }
+        Ok(())
     }
 
     pub fn start_receiver(
@@ -175,6 +209,7 @@ impl Peer {
         info_hash: Vec<u8>,
         my_id: Vec<u8>,
         peers: Peers,
+        complete_pieces: Arc<Mutex<Vec<Piece>>>,
         peer: lava_torrent::tracker::Peer, //chan_tx: Sender<(SocketAddr, message::Piece)>,
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
@@ -182,7 +217,7 @@ impl Peer {
         if peers.lock().contains_key(&addr) == false {
             //thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id));
             thread::spawn(move || {
-                Peer::process(peers, peer.addr, info_hash, my_id, get_piece, return_piece)
+                Peer::process(peers, complete_pieces, peer.addr, info_hash, my_id, get_piece, return_piece)
             });
         }
     }

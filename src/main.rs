@@ -45,7 +45,7 @@ fn main() {
     println!("pieces count {}", torrent.pieces.len());
     println!("one piece length {}", &torrent.piece_length);
 
-    if false {
+    if true {
         let info_hash = urlencoding::encode_binary(&torrent.info_hash_bytes()).into_owned();
         let params = [
             ("peer_id", peer_id.as_str()),
@@ -84,6 +84,7 @@ fn main() {
     {
         println!("interval:{:?}, min_interval {:?}", interval, min_interval);
         let peers_data = Arc::new(Mutex::new(HashMap::new()));
+        let complete_pieces = Arc::new(Mutex::new(Vec::new()));
 
         //let pieces = Arc::new(Mutex::new(pieces));
         //let chan_tx = start_piece_receiver(peers_data.clone(), pieces.clone());
@@ -95,6 +96,7 @@ fn main() {
                 info_hash,
                 peer_id.as_bytes().to_vec(),
                 peers_data.clone(),
+                complete_pieces.clone(),
                 peer, //chan_tx.clone(),
                 piece_dispatch.rx.clone(),
                 piece_dispatch.tx.clone(),
@@ -104,10 +106,10 @@ fn main() {
         loop {
             thread::sleep(Duration::from_secs(1));
             println!(
-                "active peers: {:?}, complete pieces: ",
+                "active peers: {:?}, complete pieces: {}/{}",
                 peers_data.lock().len(),
-                //pieces.lock().iter().filter(|p| p.complete).count(),
-                //torrent.pieces.len()
+                complete_pieces.lock().len(),
+                torrent.pieces.len()
             );
         }
     }
