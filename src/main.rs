@@ -28,7 +28,7 @@ trait Test {}
 impl Test for Peer {}
 
 fn main() {
-    let torrent = Torrent::read_from_file("C:/Users/h04x/Downloads/1file.torrent").unwrap();
+    let torrent = Torrent::read_from_file("C:/Users/h04x/Downloads/debian.iso.torrent").unwrap();
     let peer_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 20);
 
     /*println!(

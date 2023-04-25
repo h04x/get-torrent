@@ -182,17 +182,25 @@ impl Peer {
                 return_piece.send(piece);
                 continue;
             }
-            for u in piece.unfinished_blocks() {
-                p.send(Message::Request(message::Request::new(
-                    piece.index as u32,
-                    u.begin,
-                    u.len,
+            for u in piece.unfinished_blocks().chunks(8) {
+                for uc in u {
+                    p.send(Message::Request(message::Request::new(
+                        piece.index as u32,
+                    uc.begin,
+                    uc.len,
                 )));
-                match msg_piece_rx.recv() {
-                    Ok(msg_piece) => {
-                        piece.add(msg_piece.begin, msg_piece.block);
+                }
+                for _ in 0..8 {
+                    match msg_piece_rx.recv_timeout(Duration::from_secs(10)) {
+                        Ok(msg_piece) => {
+                            piece.add(msg_piece.begin, msg_piece.block);
+                        }
+                        Err(_) => {
+                            peers.lock().remove(&addr);
+                            return_piece.send(piece);
+                            return Ok(());
+                        },
                     }
-                    Err(_) => break,
                 }
             }
             if piece.complete {
