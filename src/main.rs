@@ -13,7 +13,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, thread};
+use std::{fs, thread, env};
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -28,7 +28,7 @@ trait Test {}
 impl Test for Peer {}
 
 fn main() {
-    let torrent = Torrent::read_from_file("C:/Users/h04x/Downloads/debian.iso.torrent").unwrap();
+    let torrent = Torrent::read_from_file(env::args().nth(1).unwrap()).unwrap();
     let peer_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 20);
 
     /*println!(

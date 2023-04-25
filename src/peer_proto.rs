@@ -175,7 +175,7 @@ impl PeerProto {
         peer_id: &'b [u8],
     ) -> Result<PeerProto, Error> {
         let hs = Handshake::build(info_hash, peer_id)?;
-        stream.write(&hs.bytes())?;
+        stream.write_all(&hs.bytes())?;
 
         let mut hs_buf = [0; 68];
         let len = stream.read(&mut hs_buf)?;

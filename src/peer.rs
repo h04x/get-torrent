@@ -6,7 +6,7 @@ use std::{
     net::{SocketAddr, TcpStream},
     sync::Arc,
     thread::{self},
-    time::{Duration, Instant},
+    time::{Duration},
 };
 
 use thiserror::Error;
@@ -48,11 +48,6 @@ pub struct Peer {}
 
 pub type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
 
-macro_rules! peer_get_mut {
-    ( $peers:expr, $addr:expr ) => {
-        $peers.lock().get_mut($addr).ok_or(Err::GetPeersHashMap)?
-    };
-}
 
 impl Peer {
     /*pub fn test(
@@ -125,7 +120,7 @@ impl Peer {
         let p = Arc::new(PeerProto::handshake(s, &info_hash, &my_id)?);
 
         let msg = p.recv()?;
-        let mut bitfield = match msg {
+        let bitfield = match msg {
             Message::Bitfield(bf) => bf,
             _ => return Err(Err::BitfieldNotRecv),
         };

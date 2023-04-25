@@ -1,21 +1,16 @@
 use std::{
     collections::BTreeMap,
-    net::SocketAddr,
     sync::{
-        mpsc::{channel, Sender},
         Arc,
     },
     thread,
-    time::Duration,
 };
 
 use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 
 use crate::{
-    message::{self, Request},
     peer::Peers,
-    peer_proto::{self, Message},
     BLOCK_SIZE,
 };
 
@@ -115,10 +110,6 @@ impl Piece {
         }
         Ok(())
     }
-}
-
-pub fn start_piece_requester(peers: Peers, pieces: Pieces) {
-    thread::spawn(move || {});
 }
 
 /*pub fn start_piece_receiver(peers: Peers, pieces: Pieces) -> Sender<(SocketAddr, message::Piece)> {
