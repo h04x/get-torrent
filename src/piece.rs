@@ -1,11 +1,7 @@
-use std::{
-    collections::BTreeMap,
-};
 use sha1::{Digest, Sha1};
+use std::collections::BTreeMap;
 
-use crate::{
-    BLOCK_SIZE,
-};
+use crate::BLOCK_SIZE;
 
 #[derive(Debug)]
 pub enum AddError {

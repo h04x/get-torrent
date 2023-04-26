@@ -6,13 +6,13 @@ use std::{
     net::{SocketAddr, TcpStream},
     sync::Arc,
     thread::{self},
-    time::{Duration},
+    time::{Duration, Instant},
 };
 
 use thiserror::Error;
 
 use crate::{
-    message,
+    peer_proto::message,
     peer_proto::{self, Message, PeerProto},
     piece::Piece,
 };
@@ -48,7 +48,6 @@ pub struct Peer {}
 
 pub type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
 
-
 impl Peer {
     fn process(
         peers: Peers,
@@ -71,6 +70,8 @@ impl Peer {
         peers.lock().insert(addr, Peer {});
 
         p.send(Message::Interested)?;
+
+        println!("ut_pex: {:?}", p.peer_handshake.ut_pex());
 
         let choke_lock = Arc::new((Mutex::new(State::Choke), Condvar::new()));
 
@@ -95,6 +96,8 @@ impl Peer {
                             break;
                         }
                     } //chan_tx.send((addr, p))?,
+                    Message::Extended(e) => println!("Extended: {:?}", e),
+                    Message::Unknown(r) => println!("Unknown: {:?}", r),
                     _ => (),
                 }
             }
@@ -117,42 +120,47 @@ impl Peer {
 
         while let Ok(mut piece) = get_piece.recv() {
             if bitfield.get(piece.index) != Some(true) {
-                #[allow(unused_must_use)] {
+                #[allow(unused_must_use)]
+                {
                     return_piece.send(piece);
                 }
                 continue;
             }
             for u in piece.unfinished_blocks().chunks(8) {
                 for uc in u {
-                    #[allow(unused_must_use)] {
+                    #[allow(unused_must_use)]
+                    {
                         p.send(Message::Request(message::Request::new(
                             piece.index as u32,
-                    uc.begin,
-                    uc.len,
-                )));
+                            uc.begin,
+                            uc.len,
+                        )));
                     }
                 }
                 for _ in 0..8 {
                     match msg_piece_rx.recv_timeout(Duration::from_secs(10)) {
                         Ok(msg_piece) => {
-                            #[allow(unused_must_use)] {
+                            #[allow(unused_must_use)]
+                            {
                                 piece.add(msg_piece.begin, msg_piece.block);
                             }
                         }
                         Err(_) => {
                             peers.lock().remove(&addr);
-                            #[allow(unused_must_use)] {
+                            #[allow(unused_must_use)]
+                            {
                                 return_piece.send(piece);
                             }
                             return Ok(());
-                        },
+                        }
                     }
                 }
             }
             if piece.complete {
                 complete_pieces.lock().push(piece);
             } else {
-                #[allow(unused_must_use)] {
+                #[allow(unused_must_use)]
+                {
                     return_piece.send(piece);
                 }
             }
@@ -173,7 +181,15 @@ impl Peer {
         if !peers.lock().contains_key(&addr) {
             //thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id));
             thread::spawn(move || {
-                Peer::process(peers, complete_pieces, peer.addr, info_hash, my_id, get_piece, return_piece)
+                Peer::process(
+                    peers,
+                    complete_pieces,
+                    peer.addr,
+                    info_hash,
+                    my_id,
+                    get_piece,
+                    return_piece,
+                )
             });
         }
     }

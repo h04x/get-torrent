@@ -1,6 +1,5 @@
 const BLOCK_SIZE: u32 = 2u32.pow(14);
 
-mod message;
 mod peer;
 mod peer_proto;
 mod piece;
@@ -13,7 +12,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fs, thread, env};
+use std::{env, fs, thread};
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -28,7 +27,12 @@ trait Test {}
 impl Test for Peer {}
 
 fn main() {
-    let torrent = Torrent::read_from_file(env::args().nth(1).unwrap()).unwrap();
+    let torrent = Torrent::read_from_file(
+        env::args()
+            .nth(1)
+            .unwrap_or("torrent/debian.iso.torrent".to_string()),
+    )
+    .unwrap();
     let peer_id = Alphanumeric.sample_string(&mut rand::thread_rng(), 20);
 
     /*println!(

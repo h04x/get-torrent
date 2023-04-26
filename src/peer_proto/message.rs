@@ -53,6 +53,10 @@ impl Bitfield {
 pub enum Error {
     #[error("Inmvalid message length")]
     InvalidMsgLen,
+    #[error("Lava torrent error")]
+    LavaTorreent(#[from] lava_torrent::LavaTorrentError),
+    #[error("Empty extended payload")]
+    EmptyExtended,
 }
 
 #[derive(Debug)]
@@ -183,5 +187,30 @@ impl Port {
         let mut raw = vec![4];
         raw.extend_from_slice(&self.listen_port.to_be_bytes());
         raw
+    }
+}
+
+#[derive(Debug)]
+pub enum Extended {
+    Handshake(lava_torrent::bencode::BencodeElem),
+    Other,
+}
+
+impl Extended {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Extended, Error> {
+        match raw.first() {
+            Some(0) => Ok(Extended::Handshake(
+                lava_torrent::bencode::BencodeElem::from_bytes(&raw[1..])?
+                    .first()
+                    .cloned()
+                    .ok_or(Error::EmptyExtended)?,
+            )),
+            Some(_) => unimplemented!(),
+            None => Err(Error::InvalidMsgLen),
+        }
+    }
+
+    pub fn bytes(&self) -> Vec<u8> {
+        unimplemented!();
     }
 }

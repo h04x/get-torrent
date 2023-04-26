@@ -6,11 +6,11 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::message::{self, Bitfield, Cancel, Have, Piece, Port, Request};
+use crate::peer_proto::message::{self, Bitfield, Cancel, Extended, Have, Piece, Port, Request};
 
 #[derive(Clone)]
 pub struct Handshake {
-    pub extensinons: [u8; 8],
+    pub extensions: [u8; 8],
     pub info_hash: [u8; 20],
     pub peer_id: [u8; 20],
 }
@@ -34,7 +34,7 @@ impl fmt::Debug for Handshake {
         write!(
             f,
             "ext: {:?}, infohash: {}, peer: {:#?}",
-            self.extensinons,
+            self.extensions,
             HEXLOWER.encode(&self.info_hash),
             String::from_utf8_lossy(&self.peer_id)
         )
@@ -50,7 +50,7 @@ impl Handshake {
             return Err(HandshakeError::PeerIdMismatchLen);
         }
         Ok(Handshake {
-            extensinons: *b"\x00\x00\x00\x00\x00\x00\x00\x00",
+            extensions: *b"\x00\x00\x00\x00\x00\x00\x00\x00",
             info_hash: info_hash.try_into().unwrap(),
             peer_id: peer_id.try_into().unwrap(),
         })
@@ -60,7 +60,7 @@ impl Handshake {
         let mut bytes = [0; 68];
         bytes[0] = 19;
         bytes[1..20].copy_from_slice(b"BitTorrent protocol");
-        bytes[20..28].copy_from_slice(&self.extensinons);
+        bytes[20..28].copy_from_slice(&self.extensions);
         bytes[28..48].copy_from_slice(&self.info_hash);
         bytes[48..68].copy_from_slice(&self.peer_id);
         bytes
@@ -78,10 +78,14 @@ impl Handshake {
             return Err(HandshakeError::ProtoNameMismatch);
         }
         Ok(Handshake {
-            extensinons: bytes[20..28].try_into().unwrap(),
+            extensions: bytes[20..28].try_into().unwrap(),
             info_hash: bytes[28..48].try_into().unwrap(),
             peer_id: bytes[48..68].try_into().unwrap(),
         })
+    }
+
+    pub fn ut_pex(&self) -> bool {
+        (self.extensions[5] & 0x10) > 0
     }
 }
 
@@ -125,6 +129,7 @@ pub enum Message {
     Piece(Piece),
     Cancel(Cancel),
     Port(Port),
+    Extended(Extended),
     Unknown(Vec<u8>),
     KeepAlive,
 }
@@ -142,6 +147,7 @@ impl Message {
             Some(7) => Self::Piece(Piece::try_from_bytes(raw)?),
             Some(8) => Self::Cancel(Cancel::try_from_bytes(raw)?),
             Some(9) => Self::Port(Port::try_from_bytes(raw)?),
+            Some(20) => Self::Extended(Extended::try_from_bytes(&raw)?),
             Some(_) => Self::Unknown(raw),
             None => Self::KeepAlive,
         });
@@ -158,6 +164,7 @@ impl Message {
             Self::Piece(p) => p.bytes(),
             Self::Cancel(c) => c.bytes(),
             Self::Port(p) => p.bytes(),
+            Self::Extended(e) => e.bytes(),
             Self::Unknown(raw) => raw,
             Self::KeepAlive => vec![],
         }
@@ -166,6 +173,7 @@ impl Message {
 
 pub struct PeerProto {
     pub stream: TcpStream,
+    pub peer_handshake: Handshake,
 }
 
 impl PeerProto {
@@ -182,12 +190,15 @@ impl PeerProto {
         if len == 0 {
             return Err(Error::ConnectionClosed);
         }
-        let peer_hs = Handshake::from_bytes(&hs_buf)?;
+        let peer_handshake = Handshake::from_bytes(&hs_buf)?;
 
-        if hs.info_hash != peer_hs.info_hash {
+        if hs.info_hash != peer_handshake.info_hash {
             return Err(Error::PeerInfoHashNotEq);
         }
-        Ok(PeerProto { stream })
+        Ok(PeerProto {
+            stream,
+            peer_handshake,
+        })
     }
 
     pub fn recv(&self) -> Result<Message, RecvMsgError> {
