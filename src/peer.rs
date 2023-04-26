@@ -31,8 +31,8 @@ pub enum Err {
     PeerProto(#[from] peer_proto::Error),
     #[error("Receive message error")]
     RecvMsg(#[from] peer_proto::RecvMsgError),
-    #[error("Get peer from peers hashmap error")]
-    GetPeersHashMap,
+    //#[error("Get peer from peers hashmap error")]
+    //GetPeersHashMap,
     //#[error("Error while piece channel sending")]
     //PieceChannelSend(#[from] SendError<(SocketAddr, message::Piece)>),
     #[error("Bitfield not received")]
@@ -50,63 +50,6 @@ pub type Peers = Arc<Mutex<HashMap<SocketAddr, Peer>>>;
 
 
 impl Peer {
-    /*pub fn test(
-        peers: Arc<Mutex<HashMap<SocketAddr, Peer>>>,
-        addr: SocketAddr,
-        info_hash: Vec<u8>,
-        peer_id: Vec<u8>,
-        //chan_tx: Sender<(SocketAddr, message::Piece)>,
-    ) -> Result<(), Err> {
-        let s = TcpStream::connect(addr)?;
-        let p = Arc::new(PeerProto::handshake(s, &info_hash, &peer_id)?);
-
-        let msg = p.recv()?;
-        let bf = match msg {
-            Message::Bitfield(bf) => bf,
-            _ => return Err(Err::BitfieldNotRecv),
-        };
-
-        let pp = p.clone();
-        {
-            peers.lock().insert(
-                addr,
-                Peer {
-                    proto: pp,
-                    bitfield: bf,
-                    choke: State::Choke,
-                },
-            );
-        }
-
-        p.send(Message::Interested)?;
-
-        let pp = p.clone();
-        thread::spawn(move || -> Result<(), Err> {
-            loop {
-                thread::sleep(Duration::from_secs(7));
-                pp.send(Message::KeepAlive)?;
-            }
-        });
-
-        loop {
-            let msg = p.recv().or_else(|e| {
-                peers.lock().remove(&addr);
-                Err(e)
-            })?;
-            //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
-            match msg {
-                Message::Choke => peer_get_mut!(peers, &addr).choke = State::Choke,
-                Message::Unchoke => peer_get_mut!(peers, &addr).choke = State::Unchoke,
-                Message::Have(h) => peer_get_mut!(peers, &addr)
-                    .bitfield
-                    .set(h.piece_index as usize, true),
-                Message::Bitfield(bf) => peer_get_mut!(peers, &addr).bitfield = bf,
-                Message::Piece(p) => (), //chan_tx.send((addr, p))?,
-                _ => (),
-            }
-        }
-    }*/
-
     fn process(
         peers: Peers,
         complete_pieces: Arc<Mutex<Vec<Piece>>>,
@@ -140,7 +83,7 @@ impl Peer {
                 match msg {
                     Message::Choke => *choke_lock2.0.lock() = State::Choke,
                     Message::Unchoke => {
-                        let &(ref lock, ref cvar) = &*choke_lock2;
+                        let (lock, cvar) = &*choke_lock2;
                         let mut choke = lock.lock();
                         *choke = State::Unchoke;
                         cvar.notify_one();
@@ -162,7 +105,7 @@ impl Peer {
         });
 
         // waiting while choked
-        let &(ref lock, ref cvar) = &*choke_lock;
+        let (lock, cvar) = &*choke_lock;
         let mut choke = lock.lock();
         if *choke == State::Choke {
             cvar.wait(&mut choke);
@@ -174,25 +117,33 @@ impl Peer {
 
         while let Ok(mut piece) = get_piece.recv() {
             if bitfield.get(piece.index) != Some(true) {
-                return_piece.send(piece);
+                #[allow(unused_must_use)] {
+                    return_piece.send(piece);
+                }
                 continue;
             }
             for u in piece.unfinished_blocks().chunks(8) {
                 for uc in u {
-                    p.send(Message::Request(message::Request::new(
-                        piece.index as u32,
+                    #[allow(unused_must_use)] {
+                        p.send(Message::Request(message::Request::new(
+                            piece.index as u32,
                     uc.begin,
                     uc.len,
                 )));
+                    }
                 }
                 for _ in 0..8 {
                     match msg_piece_rx.recv_timeout(Duration::from_secs(10)) {
                         Ok(msg_piece) => {
-                            piece.add(msg_piece.begin, msg_piece.block);
+                            #[allow(unused_must_use)] {
+                                piece.add(msg_piece.begin, msg_piece.block);
+                            }
                         }
                         Err(_) => {
                             peers.lock().remove(&addr);
-                            return_piece.send(piece);
+                            #[allow(unused_must_use)] {
+                                return_piece.send(piece);
+                            }
                             return Ok(());
                         },
                     }
@@ -201,7 +152,9 @@ impl Peer {
             if piece.complete {
                 complete_pieces.lock().push(piece);
             } else {
-                return_piece.send(piece);
+                #[allow(unused_must_use)] {
+                    return_piece.send(piece);
+                }
             }
         }
         Ok(())
@@ -217,7 +170,7 @@ impl Peer {
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
     ) {
-        if peers.lock().contains_key(&addr) == false {
+        if !peers.lock().contains_key(&addr) {
             //thread::spawn(move || Peer::test(peers, addr, info_hash, peer_id));
             thread::spawn(move || {
                 Peer::process(peers, complete_pieces, peer.addr, info_hash, my_id, get_piece, return_piece)

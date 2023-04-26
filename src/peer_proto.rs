@@ -131,7 +131,7 @@ pub enum Message {
 
 impl Message {
     fn try_from_bytes(raw: Vec<u8>) -> Result<Message, MessageError> {
-        return Ok(match raw.get(0) {
+        return Ok(match raw.first() {
             Some(0) => Self::Choke,
             Some(1) => Self::Unchoke,
             Some(2) => Self::Interested,
@@ -169,10 +169,10 @@ pub struct PeerProto {
 }
 
 impl PeerProto {
-    pub fn handshake<'a, 'b>(
+    pub fn handshake(
         mut stream: TcpStream,
-        info_hash: &'a [u8],
-        peer_id: &'b [u8],
+        info_hash: &[u8],
+        peer_id: &[u8],
     ) -> Result<PeerProto, Error> {
         let hs = Handshake::build(info_hash, peer_id)?;
         stream.write_all(&hs.bytes())?;
@@ -187,7 +187,7 @@ impl PeerProto {
         if hs.info_hash != peer_hs.info_hash {
             return Err(Error::PeerInfoHashNotEq);
         }
-        Ok(PeerProto { stream: stream })
+        Ok(PeerProto { stream })
     }
 
     pub fn recv(&self) -> Result<Message, RecvMsgError> {

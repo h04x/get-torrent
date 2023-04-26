@@ -1,20 +1,11 @@
 use std::{
     collections::BTreeMap,
-    sync::{
-        Arc,
-    },
-    thread,
 };
-
-use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 
 use crate::{
-    peer::Peers,
     BLOCK_SIZE,
 };
-
-pub type Pieces = Arc<Mutex<Vec<Piece>>>;
 
 #[derive(Debug)]
 pub enum AddError {
@@ -55,7 +46,7 @@ impl Piece {
     pub fn unfinished_blocks(&self) -> Vec<BlockParam> {
         let finished_blocks = self.blocks.keys().collect::<Vec<_>>();
         let mut all_blocks = (0..self.block_count).collect::<Vec<_>>();
-        all_blocks.retain(|i| finished_blocks.contains(&i) == false);
+        all_blocks.retain(|i| !finished_blocks.contains(&i));
         all_blocks
             .into_iter()
             .map(|begin| {

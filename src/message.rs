@@ -21,7 +21,7 @@ impl Bitfield {
         }
     }
     pub fn try_from_bytes(raw: Vec<u8>) -> Result<Bitfield, Error> {
-        if raw.len() < 1 {
+        if raw.is_empty() {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Bitfield {
@@ -41,9 +41,9 @@ impl Bitfield {
         let bit = index % 8;
         if let Some(b) = self.bitfield.get_mut(byte) {
             if flag {
-                *b = *b | 0b10000000u8 >> bit;
+                *b |= 0b10000000u8 >> bit;
             } else {
-                *b = *b & !(0b10000000u8 >> bit);
+                *b &= !(0b10000000u8 >> bit);
             }
         }
     }
@@ -72,7 +72,7 @@ impl Have {
     pub fn bytes(&self) -> Vec<u8> {
         let mut raw = vec![4];
         raw.extend_from_slice(&self.piece_index.to_be_bytes());
-        return raw;
+        raw
     }
 }
 
@@ -102,7 +102,7 @@ impl Request {
         raw.extend_from_slice(&self.index.to_be_bytes());
         raw.extend_from_slice(&self.begin.to_be_bytes());
         raw.extend_from_slice(&self.len.to_be_bytes());
-        return raw;
+        raw
     }
 }
 
@@ -161,7 +161,7 @@ impl Cancel {
         raw.extend_from_slice(&self.index.to_be_bytes());
         raw.extend_from_slice(&self.begin.to_be_bytes());
         raw.extend_from_slice(&self.len.to_be_bytes());
-        return raw;
+        raw
     }
 }
 
@@ -182,6 +182,6 @@ impl Port {
     pub fn bytes(&self) -> Vec<u8> {
         let mut raw = vec![4];
         raw.extend_from_slice(&self.listen_port.to_be_bytes());
-        return raw;
+        raw
     }
 }
