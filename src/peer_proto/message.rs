@@ -20,12 +20,12 @@ impl Bitfield {
             bitfield: vec![0; (bit_cnt as f32 / 8.0).ceil() as usize],
         }
     }
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Bitfield, Error> {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Bitfield, Error> {
         if raw.is_empty() {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Bitfield {
-            bitfield: raw[1..].to_vec(),
+            bitfield: raw.to_vec(),
         })
     }
     pub fn bytes(&self) -> Vec<u8> {
@@ -65,18 +65,16 @@ pub struct Have {
 }
 
 impl Have {
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Have, Error> {
-        if raw.len() != 5 {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Have, Error> {
+        if raw.len() != 4 {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Have {
-            piece_index: u32::from_be_bytes(raw[1..].try_into().unwrap()),
+            piece_index: u32::from_be_bytes(raw.try_into().unwrap()),
         })
     }
-    pub fn bytes(&self) -> Vec<u8> {
-        let mut raw = vec![4];
-        raw.extend_from_slice(&self.piece_index.to_be_bytes());
-        raw
+    pub fn bytes(&self) -> [u8; 4] {
+        self.piece_index.to_be_bytes()
     }
 }
 
@@ -91,22 +89,22 @@ impl Request {
     pub fn new(index: u32, begin: u32, len: u32) -> Request {
         Request { index, begin, len }
     }
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Request, Error> {
-        if raw.len() != 13 {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Request, Error> {
+        if raw.len() != 12 {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Request {
-            index: u32::from_be_bytes(raw[1..5].try_into().unwrap()),
-            begin: u32::from_be_bytes(raw[5..9].try_into().unwrap()),
-            len: u32::from_be_bytes(raw[9..].try_into().unwrap()),
+            index: u32::from_be_bytes(raw[0..4].try_into().unwrap()),
+            begin: u32::from_be_bytes(raw[4..8].try_into().unwrap()),
+            len: u32::from_be_bytes(raw[8..].try_into().unwrap()),
         })
     }
-    pub fn bytes(&self) -> Vec<u8> {
-        let mut raw = vec![6];
+    pub fn bytes(&self) -> [u8; 12] {
+        let mut raw = Vec::new();
         raw.extend_from_slice(&self.index.to_be_bytes());
         raw.extend_from_slice(&self.begin.to_be_bytes());
         raw.extend_from_slice(&self.len.to_be_bytes());
-        raw
+        raw.try_into().unwrap()
     }
 }
 
@@ -127,14 +125,14 @@ impl fmt::Debug for Piece {
 }
 
 impl Piece {
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Piece, Error> {
-        if raw.len() < 9 {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Piece, Error> {
+        if raw.len() < 8 {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Piece {
-            index: u32::from_be_bytes(raw[1..5].try_into().unwrap()),
-            begin: u32::from_be_bytes(raw[5..9].try_into().unwrap()),
-            block: raw[9..].to_vec(),
+            index: u32::from_be_bytes(raw[0..4].try_into().unwrap()),
+            begin: u32::from_be_bytes(raw[4..8].try_into().unwrap()),
+            block: raw[8..].to_vec(),
         })
     }
     pub fn bytes(&self) -> Vec<u8> {
@@ -150,22 +148,22 @@ pub struct Cancel {
 }
 
 impl Cancel {
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Cancel, Error> {
-        if raw.len() != 13 {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Cancel, Error> {
+        if raw.len() != 12 {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Cancel {
-            index: u32::from_be_bytes(raw[1..5].try_into().unwrap()),
-            begin: u32::from_be_bytes(raw[5..9].try_into().unwrap()),
-            len: u32::from_be_bytes(raw[9..].try_into().unwrap()),
+            index: u32::from_be_bytes(raw[0..4].try_into().unwrap()),
+            begin: u32::from_be_bytes(raw[4..8].try_into().unwrap()),
+            len: u32::from_be_bytes(raw[8..].try_into().unwrap()),
         })
     }
-    pub fn bytes(&self) -> Vec<u8> {
-        let mut raw = vec![6];
+    pub fn bytes(&self) -> [u8; 12] {
+        let mut raw = Vec::new();
         raw.extend_from_slice(&self.index.to_be_bytes());
         raw.extend_from_slice(&self.begin.to_be_bytes());
         raw.extend_from_slice(&self.len.to_be_bytes());
-        raw
+        raw.try_into().unwrap()
     }
 }
 
@@ -175,18 +173,18 @@ pub struct Port {
 }
 
 impl Port {
-    pub fn try_from_bytes(raw: Vec<u8>) -> Result<Port, Error> {
-        if raw.len() != 3 {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<Port, Error> {
+        if raw.len() != 2 {
             return Err(Error::InvalidMsgLen);
         }
         Ok(Port {
-            listen_port: u16::from_be_bytes(raw[1..].try_into().unwrap()),
+            listen_port: u16::from_be_bytes(raw.try_into().unwrap()),
         })
     }
-    pub fn bytes(&self) -> Vec<u8> {
-        let mut raw = vec![4];
+    pub fn bytes(&self) -> [u8; 2] {
+        let mut raw = Vec::new();
         raw.extend_from_slice(&self.listen_port.to_be_bytes());
-        raw
+        raw.try_into().unwrap()
     }
 }
 
@@ -200,7 +198,7 @@ impl Extended {
     pub fn try_from_bytes(raw: &[u8]) -> Result<Extended, Error> {
         match raw.first() {
             Some(0) => Ok(Extended::Handshake(
-                lava_torrent::bencode::BencodeElem::from_bytes(&raw[1..])?
+                lava_torrent::bencode::BencodeElem::from_bytes(raw)?
                     .first()
                     .cloned()
                     .ok_or(Error::EmptyExtended)?,

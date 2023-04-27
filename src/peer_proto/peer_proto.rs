@@ -141,30 +141,38 @@ impl Message {
             Some(1) => Self::Unchoke,
             Some(2) => Self::Interested,
             Some(3) => Self::NotInterested,
-            Some(4) => Self::Have(Have::try_from_bytes(raw)?),
-            Some(5) => Self::Bitfield(Bitfield::try_from_bytes(raw)?),
-            Some(6) => Self::Request(Request::try_from_bytes(raw)?),
-            Some(7) => Self::Piece(Piece::try_from_bytes(raw)?),
-            Some(8) => Self::Cancel(Cancel::try_from_bytes(raw)?),
-            Some(9) => Self::Port(Port::try_from_bytes(raw)?),
-            Some(20) => Self::Extended(Extended::try_from_bytes(&raw)?),
+            Some(4) => Self::Have(Have::try_from_bytes(&raw[1..])?),
+            Some(5) => Self::Bitfield(Bitfield::try_from_bytes(&raw[1..])?),
+            Some(6) => Self::Request(Request::try_from_bytes(&raw[1..])?),
+            Some(7) => Self::Piece(Piece::try_from_bytes(&raw[1..])?),
+            Some(8) => Self::Cancel(Cancel::try_from_bytes(&raw[1..])?),
+            Some(9) => Self::Port(Port::try_from_bytes(&raw[1..])?),
+            Some(20) => Self::Extended(Extended::try_from_bytes(&raw[1..])?),
             Some(_) => Self::Unknown(raw),
             None => Self::KeepAlive,
         });
     }
+
+    fn concat(l: &[u8], r: &[u8]) -> Vec<u8> {
+        let mut ret = Vec::new();
+        ret.extend_from_slice(l);
+        ret.extend_from_slice(r);
+        ret
+    }
+
     fn bytes(self) -> Vec<u8> {
         match self {
             Self::Choke => vec![0],
             Self::Unchoke => vec![1],
             Self::Interested => vec![2],
             Self::NotInterested => vec![3],
-            Self::Have(h) => h.bytes(),
-            Self::Bitfield(b) => b.bytes(),
-            Self::Request(r) => r.bytes(),
-            Self::Piece(p) => p.bytes(),
-            Self::Cancel(c) => c.bytes(),
-            Self::Port(p) => p.bytes(),
-            Self::Extended(e) => e.bytes(),
+            Self::Have(h) => Self::concat(&[4], &h.bytes()),
+            Self::Bitfield(b) => Self::concat(&[5], &b.bytes()),
+            Self::Request(r) => Self::concat(&[6], &r.bytes()),
+            Self::Piece(p) => Self::concat(&[7], &p.bytes()),
+            Self::Cancel(c) => Self::concat(&[8], &c.bytes()),
+            Self::Port(p) => Self::concat(&[9], &p.bytes()),
+            Self::Extended(e) => Self::concat(&[20], &e.bytes()),
             Self::Unknown(raw) => raw,
             Self::KeepAlive => vec![],
         }
