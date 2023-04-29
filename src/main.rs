@@ -23,6 +23,7 @@ use std::io::prelude::*;
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
 
+use crate::peer::PeerDispatch;
 use crate::piece_dispatch::PieceDispatch;
 
 trait Test {}
@@ -81,22 +82,30 @@ fn main() {
     let info_hash = torrent.info_hash_bytes();
 
     let piece_dispatch = PieceDispatch::new(&torrent);
+    let peer_dispatch = PeerDispatch::run(
+        &resp,
+        &info_hash,
+        &peer_id.into_bytes(),
+        piece_dispatch.rx,
+        piece_dispatch.tx,
+        piece_dispatch.complete_piece.clone()
+    )
+    .unwrap();
 
     if let TrackerResponse::Success {
-        interval,
         min_interval,
         peers,
         ..
     } = resp
     {
-        println!("interval:{:?}, min_interval {:?}", interval, min_interval);
-        let peers_data = Arc::new(Mutex::new(HashMap::new()));
-        let complete_pieces = Arc::new(Mutex::new(Vec::new()));
+        println!("min_interval {:?}", min_interval);
+        //let peers_data = Arc::new(Mutex::new(HashMap::new()));
+        //let complete_pieces = Arc::new(Mutex::new(Vec::new()));
 
         //let pieces = Arc::new(Mutex::new(pieces));
         //let chan_tx = start_piece_receiver(peers_data.clone(), pieces.clone());
 
-        for peer in peers {
+        /*for peer in peers {
             let info_hash = info_hash.clone();
             peer::Peer::start_receiver(
                 peer.addr,
@@ -109,14 +118,14 @@ fn main() {
                 piece_dispatch.tx.clone(),
             );
             //break;
-        }
+        }*/
 
         loop {
             thread::sleep(Duration::from_secs(1));
             println!(
                 "active peers: {:?}, complete pieces: {}/{}",
-                peers_data.lock().len(),
-                complete_pieces.lock().len(),
+                peer_dispatch.active_peers.lock().len(),
+                piece_dispatch.complete_piece.lock().len(),
                 torrent.pieces.len()
             );
         }

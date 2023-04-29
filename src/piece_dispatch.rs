@@ -1,11 +1,17 @@
+use std::sync::Arc;
+
 use crossbeam_channel::{Receiver, Sender};
 use lava_torrent::torrent::v1::Torrent;
+use parking_lot::Mutex;
 
 use crate::piece;
 
+
+pub type CompletePiece = Arc<Mutex<Vec<piece::Piece>>>;
 pub struct PieceDispatch {
     pub tx: Sender<piece::Piece>,
     pub rx: Receiver<piece::Piece>,
+    pub complete_piece: CompletePiece
 }
 
 impl PieceDispatch {
@@ -24,6 +30,7 @@ impl PieceDispatch {
             ))
             .expect("Piece queue send exception");
         }
-        PieceDispatch { tx, rx }
+        let complete_piece = Arc::new(Mutex::new(Vec::new()));
+        PieceDispatch { tx, rx, complete_piece }
     }
 }
