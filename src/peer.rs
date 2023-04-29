@@ -15,6 +15,7 @@ use crate::{
     peer_proto::message,
     peer_proto::{self, Message, PeerProto},
     piece::Piece,
+    PARALLEL_REQUEST_PER_PEER,
 };
 
 /*#[derive(Debug)]
@@ -68,10 +69,11 @@ impl Peer {
         };
 
         peers.lock().insert(addr, Peer {});
+        println!("{:?}", addr);
 
         p.send(Message::Interested)?;
 
-        println!("ut_pex: {:?}", p.peer_handshake.ut_pex());
+        //println!("ut_pex: {:?}", p.peer_handshake.ut_pex_support());
 
         let choke_lock = Arc::new((Mutex::new(State::Choke), Condvar::new()));
 
@@ -101,10 +103,6 @@ impl Peer {
                     _ => (),
                 }
             }
-            /*let msg = p.recv().or_else(|e| {
-                peers.lock().remove(&addr);
-                Err(e)
-            })?;*/
         });
 
         // waiting while choked
@@ -114,9 +112,7 @@ impl Peer {
             cvar.wait(&mut choke);
         }
 
-        /*while let Ok(msg_piece) = msg_piece_rx.recv() {
-
-        }*/
+        thread::sleep(Duration::from_secs(300));
 
         while let Ok(mut piece) = get_piece.recv() {
             if bitfield.get(piece.index) != Some(true) {
@@ -126,7 +122,7 @@ impl Peer {
                 }
                 continue;
             }
-            for u in piece.unfinished_blocks().chunks(8) {
+            for u in piece.unfinished_blocks().chunks(PARALLEL_REQUEST_PER_PEER) {
                 for uc in u {
                     #[allow(unused_must_use)]
                     {
@@ -137,7 +133,7 @@ impl Peer {
                         )));
                     }
                 }
-                for _ in 0..8 {
+                for _ in 0..PARALLEL_REQUEST_PER_PEER {
                     match msg_piece_rx.recv_timeout(Duration::from_secs(10)) {
                         Ok(msg_piece) => {
                             #[allow(unused_must_use)]

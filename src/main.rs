@@ -1,4 +1,7 @@
 const BLOCK_SIZE: u32 = 2u32.pow(14);
+const NAME: &str = "torrent-test";
+const UT_PEX_EXTENDED_MSG_ID: u8 = 1;
+const PARALLEL_REQUEST_PER_PEER: usize = 4;
 
 mod peer;
 mod peer_proto;
@@ -49,7 +52,7 @@ fn main() {
     println!("pieces count {}", torrent.pieces.len());
     println!("one piece length {}", &torrent.piece_length);
 
-    if true {
+    if false {
         let info_hash = urlencoding::encode_binary(&torrent.info_hash_bytes()).into_owned();
         let params = [
             ("peer_id", peer_id.as_str()),
@@ -65,7 +68,7 @@ fn main() {
         let url = reqwest::Url::parse(&format!("{}&info_hash={}", url, info_hash)).unwrap();
 
         let client = reqwest::blocking::Client::builder()
-            .user_agent("torrent-test")
+            .user_agent(NAME)
             .build()
             .unwrap();
         let resp = client.get(url).send().unwrap();
@@ -105,6 +108,7 @@ fn main() {
                 piece_dispatch.rx.clone(),
                 piece_dispatch.tx.clone(),
             );
+            //break;
         }
 
         loop {

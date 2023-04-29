@@ -8,6 +8,8 @@ use thiserror::Error;
 
 use crate::peer_proto::message::{self, Bitfield, Cancel, Extended, Have, Piece, Port, Request};
 
+use message::prepend;
+
 #[derive(Clone)]
 pub struct Handshake {
     pub extensions: [u8; 8],
@@ -50,7 +52,7 @@ impl Handshake {
             return Err(HandshakeError::PeerIdMismatchLen);
         }
         Ok(Handshake {
-            extensions: *b"\x00\x00\x00\x00\x00\x00\x00\x00",
+            extensions: *b"\x00\x00\x00\x00\x00\x10\x00\x00",
             info_hash: info_hash.try_into().unwrap(),
             peer_id: peer_id.try_into().unwrap(),
         })
@@ -84,7 +86,7 @@ impl Handshake {
         })
     }
 
-    pub fn ut_pex(&self) -> bool {
+    pub fn ut_pex_support(&self) -> bool {
         (self.extensions[5] & 0x10) > 0
     }
 }
@@ -153,26 +155,19 @@ impl Message {
         });
     }
 
-    fn concat(l: &[u8], r: &[u8]) -> Vec<u8> {
-        let mut ret = Vec::new();
-        ret.extend_from_slice(l);
-        ret.extend_from_slice(r);
-        ret
-    }
-
     fn bytes(self) -> Vec<u8> {
         match self {
             Self::Choke => vec![0],
             Self::Unchoke => vec![1],
             Self::Interested => vec![2],
             Self::NotInterested => vec![3],
-            Self::Have(h) => Self::concat(&[4], &h.bytes()),
-            Self::Bitfield(b) => Self::concat(&[5], &b.bytes()),
-            Self::Request(r) => Self::concat(&[6], &r.bytes()),
-            Self::Piece(p) => Self::concat(&[7], &p.bytes()),
-            Self::Cancel(c) => Self::concat(&[8], &c.bytes()),
-            Self::Port(p) => Self::concat(&[9], &p.bytes()),
-            Self::Extended(e) => Self::concat(&[20], &e.bytes()),
+            Self::Have(h) => prepend(&[4], &h.bytes()),
+            Self::Bitfield(b) => prepend(&[5], &b.bytes()),
+            Self::Request(r) => prepend(&[6], &r.bytes()),
+            Self::Piece(p) => prepend(&[7], &p.bytes()),
+            Self::Cancel(c) => prepend(&[8], &c.bytes()),
+            Self::Port(p) => prepend(&[9], &p.bytes()),
+            Self::Extended(e) => prepend(&[20], &e.bytes()),
             Self::Unknown(raw) => raw,
             Self::KeepAlive => vec![],
         }
@@ -203,10 +198,25 @@ impl PeerProto {
         if hs.info_hash != peer_handshake.info_hash {
             return Err(Error::PeerInfoHashNotEq);
         }
-        Ok(PeerProto {
+
+        let pp = PeerProto {
             stream,
             peer_handshake,
-        })
+        };
+
+        if pp.peer_handshake.ut_pex_support() {
+            pp.ut_pex_handshake();
+            // await extension message TODO: replace await extension to parse
+            pp.recv();
+        }
+
+        Ok(pp)
+    }
+
+    pub fn ut_pex_handshake(&self) {
+        if self.peer_handshake.ut_pex_support() {
+            self.send(Message::Extended(Extended::handshake()));
+        }
     }
 
     pub fn recv(&self) -> Result<Message, RecvMsgError> {

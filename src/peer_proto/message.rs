@@ -1,6 +1,20 @@
 use core::fmt;
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+};
 
+use lava_torrent::bencode::BencodeElem;
 use thiserror::Error;
+
+use crate::{NAME, UT_PEX_EXTENDED_MSG_ID};
+
+pub fn prepend(l: &[u8], r: &[u8]) -> Vec<u8> {
+    let mut ret = Vec::new();
+    ret.extend_from_slice(l);
+    ret.extend_from_slice(r);
+    ret
+}
 
 pub struct Bitfield {
     bitfield: Vec<u8>,
@@ -189,26 +203,77 @@ impl Port {
 }
 
 #[derive(Debug)]
+// TODO: parse other PEB 11 fields
+pub struct UtPex {
+    pub added: Vec<SocketAddr>,
+}
+
+impl UtPex {
+    pub fn try_from_bytes(raw: &[u8]) -> Result<UtPex, Error> {
+        let msg = BencodeElem::from_bytes(raw)?
+            .first()
+            .cloned()
+            .ok_or(Error::EmptyExtended)?;
+
+        let mut added = Vec::new();
+        if let BencodeElem::Dictionary(d) = msg {
+            if let Some(a) = d.get("added") {
+                if let BencodeElem::Bytes(bytes) = a {
+                    for chunk in bytes.chunks_exact(6) {
+                        let (ip, port) = chunk.split_at(4);
+                        let ip = IpAddr::from(<[u8; 4]>::try_from(ip).unwrap());
+                        let port = u16::from_be_bytes(<[u8; 2]>::try_from(port).unwrap());
+                        added.push(SocketAddr::new(ip, port));
+                    }
+                }
+            }
+        }
+        Ok(UtPex { added })
+    }
+    pub fn bytes(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 pub enum Extended {
-    Handshake(lava_torrent::bencode::BencodeElem),
-    Other,
+    Handshake(BencodeElem),
+    UtPex(UtPex),
+    Unknown(Vec<u8>),
 }
 
 impl Extended {
     pub fn try_from_bytes(raw: &[u8]) -> Result<Extended, Error> {
         match raw.first() {
             Some(0) => Ok(Extended::Handshake(
-                lava_torrent::bencode::BencodeElem::from_bytes(raw)?
+                BencodeElem::from_bytes(raw)?
                     .first()
                     .cloned()
                     .ok_or(Error::EmptyExtended)?,
             )),
-            Some(_) => unimplemented!(),
+            Some(&UT_PEX_EXTENDED_MSG_ID) => Ok(Self::UtPex(UtPex::try_from_bytes(&raw[1..])?)),
+            Some(_) => Ok(Self::Unknown(raw.to_vec())),
             None => Err(Error::InvalidMsgLen),
         }
     }
 
     pub fn bytes(&self) -> Vec<u8> {
-        unimplemented!();
+        match self {
+            Self::Handshake(hs) => prepend(&[0], &hs.encode()),
+            Self::UtPex(msg) => prepend(&[UT_PEX_EXTENDED_MSG_ID], &msg.bytes()),
+            Self::Unknown(_) => todo!(),
+        }
+    }
+
+    pub fn handshake() -> Extended {
+        let p = HashMap::from([(
+            "ut_pex".to_string(),
+            BencodeElem::Integer(UT_PEX_EXTENDED_MSG_ID as i64),
+        )]);
+        let pd = BencodeElem::Dictionary(p);
+        let m = HashMap::from([("m".to_string(), pd)]);
+        let md = BencodeElem::Dictionary(m);
+        Extended::Handshake(md)
+        //Extended::Handshake()
     }
 }
