@@ -217,14 +217,12 @@ impl UtPex {
 
         let mut added = Vec::new();
         if let BencodeElem::Dictionary(d) = msg {
-            if let Some(a) = d.get("added") {
-                if let BencodeElem::Bytes(bytes) = a {
-                    for chunk in bytes.chunks_exact(6) {
-                        let (ip, port) = chunk.split_at(4);
-                        let ip = IpAddr::from(<[u8; 4]>::try_from(ip).unwrap());
-                        let port = u16::from_be_bytes(<[u8; 2]>::try_from(port).unwrap());
-                        added.push(SocketAddr::new(ip, port));
-                    }
+            if let Some(BencodeElem::Bytes(bytes)) = d.get("added") {
+                for chunk in bytes.chunks_exact(6) {
+                    let (ip, port) = chunk.split_at(4);
+                    let ip = IpAddr::from(<[u8; 4]>::try_from(ip).unwrap());
+                    let port = u16::from_be_bytes(<[u8; 2]>::try_from(port).unwrap());
+                    added.push(SocketAddr::new(ip, port));
                 }
             }
         }

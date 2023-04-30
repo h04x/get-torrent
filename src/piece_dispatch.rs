@@ -6,12 +6,11 @@ use parking_lot::Mutex;
 
 use crate::piece;
 
-
 pub type CompletePiece = Arc<Mutex<Vec<piece::Piece>>>;
 pub struct PieceDispatch {
     pub tx: Sender<piece::Piece>,
     pub rx: Receiver<piece::Piece>,
-    pub complete_piece: CompletePiece
+    pub complete_piece: CompletePiece,
 }
 
 impl PieceDispatch {
@@ -31,6 +30,10 @@ impl PieceDispatch {
             .expect("Piece queue send exception");
         }
         let complete_piece = Arc::new(Mutex::new(Vec::new()));
-        PieceDispatch { tx, rx, complete_piece }
+        PieceDispatch {
+            tx,
+            rx,
+            complete_piece,
+        }
     }
 }

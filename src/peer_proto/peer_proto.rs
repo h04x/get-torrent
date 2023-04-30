@@ -44,18 +44,14 @@ impl fmt::Debug for Handshake {
 }
 
 impl Handshake {
-    pub fn build<'a>(info_hash: &'a [u8], peer_id: &'a [u8]) -> Result<Handshake, HandshakeError> {
-        if info_hash.len() != 20 {
-            return Err(HandshakeError::InfoHashMismatchLen);
+    pub fn new(info_hash: [u8; 20], peer_id: [u8; 20]) -> Handshake {
+        Handshake {
+            // TODO: add extensions class that allow set bits more readable
+            // ut_pex, dht bits set
+            extensions: *b"\x00\x00\x00\x00\x00\x10\x00\x01",
+            info_hash: info_hash,
+            peer_id: peer_id,
         }
-        if peer_id.len() != 20 {
-            return Err(HandshakeError::PeerIdMismatchLen);
-        }
-        Ok(Handshake {
-            extensions: *b"\x00\x00\x00\x00\x00\x10\x00\x00",
-            info_hash: info_hash.try_into().unwrap(),
-            peer_id: peer_id.try_into().unwrap(),
-        })
     }
 
     pub fn bytes(&self) -> [u8; 68] {
@@ -86,7 +82,7 @@ impl Handshake {
         })
     }
 
-    pub fn ut_pex_support(&self) -> bool {
+    pub fn extended_support(&self) -> bool {
         (self.extensions[5] & 0x10) > 0
     }
 }
@@ -174,6 +170,7 @@ impl Message {
     }
 }
 
+#[derive(Debug)]
 pub struct PeerProto {
     pub stream: TcpStream,
     pub peer_handshake: Handshake,
@@ -182,10 +179,10 @@ pub struct PeerProto {
 impl PeerProto {
     pub fn handshake(
         mut stream: TcpStream,
-        info_hash: &[u8],
-        peer_id: &[u8],
+        info_hash: [u8; 20],
+        peer_id: [u8; 20],
     ) -> Result<PeerProto, Error> {
-        let hs = Handshake::build(info_hash, peer_id)?;
+        let hs = Handshake::new(info_hash, peer_id);
         stream.write_all(&hs.bytes())?;
 
         let mut hs_buf = [0; 68];
@@ -204,7 +201,7 @@ impl PeerProto {
             peer_handshake,
         };
 
-        if pp.peer_handshake.ut_pex_support() {
+        if pp.peer_handshake.extended_support() {
             pp.ut_pex_handshake();
             // await extension message TODO: replace await extension to parse
             pp.recv();
@@ -214,7 +211,7 @@ impl PeerProto {
     }
 
     pub fn ut_pex_handshake(&self) {
-        if self.peer_handshake.ut_pex_support() {
+        if self.peer_handshake.extended_support() {
             self.send(Message::Extended(Extended::handshake()));
         }
     }

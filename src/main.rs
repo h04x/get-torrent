@@ -3,7 +3,7 @@ const NAME: &str = "torrent-test";
 const UT_PEX_EXTENDED_MSG_ID: u8 = 1;
 const PARALLEL_REQUEST_PER_PEER: usize = 4;
 
-mod peer;
+mod peer_dispatch;
 mod peer_proto;
 mod piece;
 mod piece_dispatch;
@@ -23,7 +23,7 @@ use std::io::prelude::*;
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
 
-use crate::peer::PeerDispatch;
+use crate::peer_dispatch::PeerDispatch;
 use crate::piece_dispatch::PieceDispatch;
 
 trait Test {}
@@ -53,7 +53,7 @@ fn main() {
     println!("pieces count {}", torrent.pieces.len());
     println!("one piece length {}", &torrent.piece_length);
 
-    if false {
+    if true {
         let info_hash = urlencoding::encode_binary(&torrent.info_hash_bytes()).into_owned();
         let params = [
             ("peer_id", peer_id.as_str()),
@@ -84,50 +84,21 @@ fn main() {
     let piece_dispatch = PieceDispatch::new(&torrent);
     let peer_dispatch = PeerDispatch::run(
         &resp,
-        &info_hash,
-        &peer_id.into_bytes(),
+        info_hash.try_into().unwrap(),
+        peer_id.into_bytes().try_into().unwrap(),
         piece_dispatch.rx,
         piece_dispatch.tx,
-        piece_dispatch.complete_piece.clone()
+        piece_dispatch.complete_piece.clone(),
     )
     .unwrap();
 
-    if let TrackerResponse::Success {
-        min_interval,
-        peers,
-        ..
-    } = resp
-    {
-        println!("min_interval {:?}", min_interval);
-        //let peers_data = Arc::new(Mutex::new(HashMap::new()));
-        //let complete_pieces = Arc::new(Mutex::new(Vec::new()));
-
-        //let pieces = Arc::new(Mutex::new(pieces));
-        //let chan_tx = start_piece_receiver(peers_data.clone(), pieces.clone());
-
-        /*for peer in peers {
-            let info_hash = info_hash.clone();
-            peer::Peer::start_receiver(
-                peer.addr,
-                info_hash,
-                peer_id.as_bytes().to_vec(),
-                peers_data.clone(),
-                complete_pieces.clone(),
-                peer, //chan_tx.clone(),
-                piece_dispatch.rx.clone(),
-                piece_dispatch.tx.clone(),
-            );
-            //break;
-        }*/
-
-        loop {
-            thread::sleep(Duration::from_secs(1));
-            println!(
-                "active peers: {:?}, complete pieces: {}/{}",
-                peer_dispatch.active_peers.lock().len(),
-                piece_dispatch.complete_piece.lock().len(),
-                torrent.pieces.len()
-            );
-        }
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        println!(
+            "active peers: {:?}, complete pieces: {}/{}",
+            peer_dispatch.active_peers.lock().len(),
+            piece_dispatch.complete_piece.lock().len(),
+            torrent.pieces.len()
+        );
     }
 }

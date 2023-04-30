@@ -14,9 +14,10 @@ use thiserror::Error;
 
 use crate::{
     peer_proto::message,
-    peer_proto::{self, Message, PeerProto, message::Extended},
+    peer_proto::{self, message::Extended, Message, PeerProto},
     piece::Piece,
-    PARALLEL_REQUEST_PER_PEER, piece_dispatch::CompletePiece,
+    piece_dispatch::CompletePiece,
+    PARALLEL_REQUEST_PER_PEER,
 };
 
 /*#[derive(Debug)]
@@ -66,11 +67,11 @@ pub struct PeerDispatch {
 impl PeerDispatch {
     pub fn run(
         resp: &TrackerResponse,
-        info_hash: &[u8],
-        local_peer_id: &[u8],
+        info_hash: [u8; 20],
+        local_peer_id: [u8; 20],
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
-        complete_piece: CompletePiece
+        complete_piece: CompletePiece,
     ) -> Result<PeerDispatch, RunError> {
         let (send_peer, get_peer) = crossbeam_channel::unbounded();
 
@@ -89,9 +90,18 @@ impl PeerDispatch {
         let ap = active_peers.clone();
         let gp = get_peer.clone();
         let sp = send_peer.clone();
-        let ih = info_hash.to_vec();
-        let pi = local_peer_id.to_vec();
-        thread::spawn(move || Self::peer_receiver(ap, gp, sp, ih, pi, get_piece, return_piece, complete_piece));
+        thread::spawn(move || {
+            Self::peer_receiver(
+                ap,
+                gp,
+                sp,
+                info_hash,
+                local_peer_id,
+                get_piece,
+                return_piece,
+                complete_piece,
+            )
+        });
 
         Ok(PeerDispatch {
             send_peer,
@@ -104,11 +114,11 @@ impl PeerDispatch {
         active_peers: ActivePeers,
         get_peer: Receiver<SocketAddr>,
         send_peer: Sender<SocketAddr>,
-        info_hash: Vec<u8>,
-        local_peer_id: Vec<u8>,
+        info_hash: [u8; 20],
+        local_peer_id: [u8; 20],
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
-        complete_piece: CompletePiece
+        complete_piece: CompletePiece,
     ) {
         while let Ok(addr) = get_peer.recv() {
             if active_peers.lock().contains_key(&addr) {
@@ -128,15 +138,22 @@ impl PeerDispatch {
     fn peer_run(
         active_peers: ActivePeers,
         addr: SocketAddr,
-        info_hash: Vec<u8>,
-        local_peer_id: Vec<u8>,
+        info_hash: [u8; 20],
+        local_peer_id: [u8; 20],
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
         complete_piece: CompletePiece,
-        send_peer: Sender<SocketAddr>
+        send_peer: Sender<SocketAddr>,
     ) -> Result<(), Err> {
         let s = TcpStream::connect(addr)?;
-        let p = Arc::new(PeerProto::handshake(s, &info_hash, &local_peer_id)?);
+        let t = PeerProto::handshake(s, info_hash, local_peer_id);
+        if t.is_err() {
+            println!(
+                "peer {} connected but handshake failed due to {:?}",
+                addr, t
+            );
+        }
+        let p = Arc::new(t?);
 
         let msg = p.recv()?;
         let bitfield = match msg {
@@ -145,7 +162,7 @@ impl PeerDispatch {
         };
 
         active_peers.lock().insert(addr, ());
-        //println!("{:?}", addr);
+        //println!("{:?}", p.peer_handshake.extended_support());
 
         p.send(Message::Interested)?;
 
@@ -219,7 +236,7 @@ impl PeerDispatch {
         choke_lock: ChokeLock,
         peer_proto: Arc<PeerProto>,
         msg_piece_tx: Sender<message::Piece>,
-        send_peer: Sender<SocketAddr>
+        send_peer: Sender<SocketAddr>,
     ) {
         while let Ok(msg) = peer_proto.recv() {
             //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
@@ -237,11 +254,18 @@ impl PeerDispatch {
                     if msg_piece_tx.send(p).is_err() {
                         break;
                     }
-                }, //chan_tx.send((addr, p))?,
-                Message::Extended(Extended::UtPex(pex)) => for addr in pex.added {
-                    send_peer.send(addr);
-                },
-                Message::Unknown(r) => println!("Unknown: {:?}", r),
+                } //chan_tx.send((addr, p))?,
+                Message::Port(port) => println!(
+                    "port received: {:?} {:?}",
+                    peer_proto.stream.peer_addr(),
+                    port
+                ),
+                Message::Extended(Extended::UtPex(pex)) => {
+                    for addr in pex.added {
+                        send_peer.send(addr);
+                    }
+                }
+                Message::Unknown(r) => println!("Received unknown msg: {:?}", r),
                 _ => (),
             }
         }
