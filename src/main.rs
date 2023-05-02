@@ -1,5 +1,5 @@
 const BLOCK_SIZE: u32 = 2u32.pow(14);
-const NAME: &str = "torrent-test";
+const NAME: &str = "get-torrent";
 const UT_PEX_EXTENDED_MSG_ID: u8 = 1;
 const PARALLEL_REQUEST_PER_PEER: usize = 4;
 
