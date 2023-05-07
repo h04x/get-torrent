@@ -4,7 +4,7 @@ use parking_lot::{Condvar, Mutex};
 use std::{
     collections::HashMap,
     fmt::Debug,
-    net::{SocketAddr, TcpStream},
+    net::{SocketAddr, TcpStream, UdpSocket, IpAddr},
     sync::Arc,
     thread::{self},
     time::{Duration, Instant},
@@ -238,6 +238,7 @@ impl PeerDispatch {
         msg_piece_tx: Sender<message::Piece>,
         send_peer: Sender<SocketAddr>,
     ) {
+        let s = UdpSocket::bind("0.0.0.0:0").unwrap();
         while let Ok(msg) = peer_proto.recv() {
             //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
             match msg {
@@ -255,11 +256,18 @@ impl PeerDispatch {
                         break;
                     }
                 } //chan_tx.send((addr, p))?,
-                Message::Port(port) => println!(
+                Message::Port(port) => {println!(
                     "port received: {:?} {:?}",
                     peer_proto.stream.peer_addr(),
                     port
-                ),
+                );
+                    if let IpAddr::V4(addr) = peer_proto.stream.peer_addr().unwrap().ip() {
+                        let mut buf = Vec::new();
+                        buf.extend_from_slice(&addr.octets());
+                        buf.extend_from_slice(&port.bytes());
+                        s.send_to(&buf, "127.0.0.1:56565");
+                    }
+                },
                 Message::Extended(Extended::UtPex(pex)) => {
                     for addr in pex.added {
                         send_peer.send(addr);
