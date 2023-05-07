@@ -3,6 +3,7 @@ const NAME: &str = "get-torrent";
 const UT_PEX_EXTENDED_MSG_ID: u8 = 1;
 const PARALLEL_REQUEST_PER_PEER: usize = 4;
 
+mod dht_dispatch;
 mod peer_dispatch;
 mod piece;
 mod piece_dispatch;
@@ -22,6 +23,7 @@ use std::io::prelude::*;
 use lava_torrent::torrent::v1::Torrent;
 use lava_torrent::tracker::{Peer, TrackerResponse};
 
+use crate::dht_dispatch::DhtDispatch;
 use crate::peer_dispatch::PeerDispatch;
 use crate::piece_dispatch::PieceDispatch;
 
@@ -78,18 +80,22 @@ fn main() {
 
     let s = fs::read("peers.torrent").unwrap();
     let resp = TrackerResponse::from_bytes(s).unwrap();
-    let info_hash = torrent.info_hash_bytes();
+    let info_hash = <[u8; 20]>::try_from(torrent.info_hash_bytes()).unwrap();
 
     let piece_dispatch = PieceDispatch::new(&torrent);
+    let dht_dispatch = DhtDispatch::new(info_hash);
     let peer_dispatch = PeerDispatch::run(
         &resp,
-        info_hash.try_into().unwrap(),
+        info_hash,
         peer_id.into_bytes().try_into().unwrap(),
         piece_dispatch.rx,
         piece_dispatch.tx,
         piece_dispatch.complete_piece.clone(),
+        dht_dispatch.msg_port_send.clone(),
     )
     .unwrap();
+
+    dht_dispatch.run(peer_dispatch.send_peer);
 
     loop {
         thread::sleep(Duration::from_secs(1));

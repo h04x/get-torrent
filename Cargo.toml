@@ -16,4 +16,4 @@ thiserror = "1.0"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 dht-get-peers = { git="https://github.com/h04x/dht-get-peers", rev="725990a" }
-bittorrent-peer-proto = { git="https://github.com/h04x/bittorrent-peer-proto", rev="3d20246" }
+bittorrent-peer-proto = { git="https://github.com/h04x/bittorrent-peer-proto", rev="491476b" }

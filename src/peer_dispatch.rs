@@ -4,7 +4,7 @@ use parking_lot::{Condvar, Mutex};
 use std::{
     collections::HashMap,
     fmt::Debug,
-    net::{SocketAddr, TcpStream, UdpSocket, IpAddr},
+    net::{IpAddr, SocketAddr, TcpStream, UdpSocket},
     sync::Arc,
     thread::{self},
     time::{Duration, Instant},
@@ -20,7 +20,10 @@ use crate::{
     PARALLEL_REQUEST_PER_PEER,
 };
 
-use bittorrent_peer_proto::{peer_proto, message::{self, Extended}};
+use bittorrent_peer_proto::{
+    message::{self, Extended},
+    peer_proto,
+};
 
 /*#[derive(Debug)]
 pub struct Error {
@@ -74,6 +77,7 @@ impl PeerDispatch {
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
         complete_piece: CompletePiece,
+        msg_port_send: Sender<(SocketAddr, message::Port)>,
     ) -> Result<PeerDispatch, RunError> {
         let (send_peer, get_peer) = crossbeam_channel::unbounded();
 
@@ -102,6 +106,7 @@ impl PeerDispatch {
                 get_piece,
                 return_piece,
                 complete_piece,
+                msg_port_send,
             )
         });
 
@@ -121,6 +126,7 @@ impl PeerDispatch {
         get_piece: Receiver<Piece>,
         return_piece: Sender<Piece>,
         complete_piece: CompletePiece,
+        msg_port_send: Sender<(SocketAddr, message::Port)>,
     ) {
         while let Ok(addr) = get_peer.recv() {
             if active_peers.lock().contains_key(&addr) {
@@ -133,7 +139,8 @@ impl PeerDispatch {
             let rp = return_piece.clone();
             let cp = complete_piece.clone();
             let sp = send_peer.clone();
-            thread::spawn(move || Self::peer_run(ap, addr, ih, pi, gp, rp, cp, sp));
+            let mp = msg_port_send.clone();
+            thread::spawn(move || Self::peer_run(ap, addr, ih, pi, gp, rp, cp, sp, mp));
         }
     }
 
@@ -146,6 +153,7 @@ impl PeerDispatch {
         return_piece: Sender<Piece>,
         complete_piece: CompletePiece,
         send_peer: Sender<SocketAddr>,
+        msg_port_send: Sender<(SocketAddr, message::Port)>,
     ) -> Result<(), Err> {
         let s = TcpStream::connect(addr)?;
         let t = peer_proto::PeerProto::handshake(s, info_hash, local_peer_id);
@@ -173,7 +181,9 @@ impl PeerDispatch {
         let (msg_piece_tx, msg_piece_rx) = crossbeam_channel::unbounded();
         let pp = p.clone();
         let cl = choke_lock.clone();
-        thread::spawn(move || Self::preprocess_received_msg(cl, pp, msg_piece_tx, send_peer));
+        thread::spawn(move || {
+            Self::preprocess_received_msg(cl, pp, msg_piece_tx, send_peer, msg_port_send)
+        });
 
         // waiting while choked
         let (lock, cvar) = &*choke_lock;
@@ -239,6 +249,7 @@ impl PeerDispatch {
         peer_proto: Arc<peer_proto::PeerProto>,
         msg_piece_tx: Sender<message::Piece>,
         send_peer: Sender<SocketAddr>,
+        msg_port_send: Sender<(SocketAddr, message::Port)>,
     ) {
         let s = UdpSocket::bind("0.0.0.0:0").unwrap();
         while let Ok(msg) = peer_proto.recv() {
@@ -258,18 +269,23 @@ impl PeerDispatch {
                         break;
                     }
                 } //chan_tx.send((addr, p))?,
-                peer_proto::Message::Port(port) => {println!(
-                    "port received: {:?} {:?}",
-                    peer_proto.stream.peer_addr(),
-                    port
-                );
+                peer_proto::Message::Port(port) => {
+                    if let Ok(addr) = peer_proto.stream.peer_addr() {
+                        msg_port_send.send((addr, port));
+                    }
+                    /*
+                    println!(
+                        "port received: {:?} {:?}",
+                        peer_proto.stream.peer_addr(),
+                        port
+                    );*/
                     if let IpAddr::V4(addr) = peer_proto.stream.peer_addr().unwrap().ip() {
                         let mut buf = Vec::new();
                         buf.extend_from_slice(&addr.octets());
                         buf.extend_from_slice(&port.bytes());
                         s.send_to(&buf, "127.0.0.1:56565");
                     }
-                },
+                }
                 peer_proto::Message::Extended(Extended::UtPex(pex)) => {
                     for addr in pex.added {
                         send_peer.send(addr);
