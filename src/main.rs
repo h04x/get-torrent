@@ -4,7 +4,6 @@ const UT_PEX_EXTENDED_MSG_ID: u8 = 1;
 const PARALLEL_REQUEST_PER_PEER: usize = 4;
 
 mod peer_dispatch;
-mod peer_proto;
 mod piece;
 mod piece_dispatch;
 #[cfg(test)]

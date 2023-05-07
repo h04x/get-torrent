@@ -13,12 +13,14 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    peer_proto::message,
-    peer_proto::{self, message::Extended, Message, PeerProto},
+    //peer_proto::message,
+    //peer_proto::{self, message::Extended, Message, PeerProto},
     piece::Piece,
     piece_dispatch::CompletePiece,
     PARALLEL_REQUEST_PER_PEER,
 };
+
+use bittorrent_peer_proto::{peer_proto, message::{self, Extended}};
 
 /*#[derive(Debug)]
 pub struct Error {
@@ -146,7 +148,7 @@ impl PeerDispatch {
         send_peer: Sender<SocketAddr>,
     ) -> Result<(), Err> {
         let s = TcpStream::connect(addr)?;
-        let t = PeerProto::handshake(s, info_hash, local_peer_id);
+        let t = peer_proto::PeerProto::handshake(s, info_hash, local_peer_id);
         if t.is_err() {
             println!(
                 "peer {} connected but handshake failed due to {:?}",
@@ -157,14 +159,14 @@ impl PeerDispatch {
 
         let msg = p.recv()?;
         let bitfield = match msg {
-            Message::Bitfield(bf) => bf,
+            peer_proto::Message::Bitfield(bf) => bf,
             _ => return Err(Err::BitfieldNotRecv),
         };
 
         active_peers.lock().insert(addr, ());
         //println!("{:?}", p.peer_handshake.extended_support());
 
-        p.send(Message::Interested)?;
+        p.send(peer_proto::Message::Interested)?;
 
         let choke_lock = Arc::new((Mutex::new(State::Choke), Condvar::new()));
 
@@ -194,7 +196,7 @@ impl PeerDispatch {
                 for uc in u {
                     #[allow(unused_must_use)]
                     {
-                        p.send(Message::Request(message::Request::new(
+                        p.send(peer_proto::Message::Request(message::Request::new(
                             piece.index as u32,
                             uc.begin,
                             uc.len,
@@ -234,7 +236,7 @@ impl PeerDispatch {
 
     fn preprocess_received_msg(
         choke_lock: ChokeLock,
-        peer_proto: Arc<PeerProto>,
+        peer_proto: Arc<peer_proto::PeerProto>,
         msg_piece_tx: Sender<message::Piece>,
         send_peer: Sender<SocketAddr>,
     ) {
@@ -242,8 +244,8 @@ impl PeerDispatch {
         while let Ok(msg) = peer_proto.recv() {
             //println!("{:?} [{:?}] {:?}", Instant::now(), addr, msg);
             match msg {
-                Message::Choke => *choke_lock.0.lock() = State::Choke,
-                Message::Unchoke => {
+                peer_proto::Message::Choke => *choke_lock.0.lock() = State::Choke,
+                peer_proto::Message::Unchoke => {
                     let (lock, cvar) = &*choke_lock;
                     let mut choke = lock.lock();
                     *choke = State::Unchoke;
@@ -251,12 +253,12 @@ impl PeerDispatch {
                 }
                 //Message::Have(h) => cfg.lock().bitfield.set(h.piece_index as usize, true),
                 //Message::Bitfield(bf) => cfg.lock().bitfield = bf,
-                Message::Piece(p) => {
+                peer_proto::Message::Piece(p) => {
                     if msg_piece_tx.send(p).is_err() {
                         break;
                     }
                 } //chan_tx.send((addr, p))?,
-                Message::Port(port) => {println!(
+                peer_proto::Message::Port(port) => {println!(
                     "port received: {:?} {:?}",
                     peer_proto.stream.peer_addr(),
                     port
@@ -268,12 +270,12 @@ impl PeerDispatch {
                         s.send_to(&buf, "127.0.0.1:56565");
                     }
                 },
-                Message::Extended(Extended::UtPex(pex)) => {
+                peer_proto::Message::Extended(Extended::UtPex(pex)) => {
                     for addr in pex.added {
                         send_peer.send(addr);
                     }
                 }
-                Message::Unknown(r) => println!("Received unknown msg: {:?}", r),
+                peer_proto::Message::Unknown(r) => println!("Received unknown msg: {:?}", r),
                 _ => (),
             }
         }
